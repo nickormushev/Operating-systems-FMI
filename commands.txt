@@ -1,0 +1,201 @@
+echo -n "Hello" - does not add a new line ls -a - shows files that start with .
+62.44.100.23
+
+ls -i [<target file>] [-R] [-a] [-l] [-t] [-r] - shows the inode of a target file or a directory. -t sorts by time. -r reverses output
+ln <target file> <hard link name> - creates a hard link
+ln -s <target file> <symlink name> - creates a symlink. Glows in red in ll if it is broken
+df [-h] [-i] - shows mounted file systems. -h for human readable space on disk. -i - show number of inodes
+du [-k] [-h] [-m] - shows the size of the file in some format. k is for kb. h is for human readable. m for mb
+stat [-c "<string for format>"] - shows access, modify and change time. -c gives you the ability to change output format. %n for name %y 
+                                  for date i think. %Y is epoch time. The special linux time  
+
+file <filename> - gives file type. This is because file extensions don't mean anything. They are just for the user. Popular file formats 
+                  have special structures and a header with info of the filetype thte the command can read
+
+head [-n [-]<num>] <filename> - first ten lines of a file. -n is used for number of lines. [] - means optional in man page. "-<num>" 
+                                takes without last <num> lines    
+tail [-n [+]<num>] [-f] <filename> - You know tail. The plus before <num> means you start after the first n lines. -f refreshes file output
+                                     on a timer. You can skip -n and write -5 or -4
+
+wc [-l] [-c] [-m] [-w] <file1>..<filen> - word count. -l is for lines. -w for words. -c for bytes. 
+                                          -m for chars(does not include spaces and new lines) 
+                                          Prints out: <lines> <word count> <byte/char count>. 
+
+cut -d <delimiter> [-f <columns in file depending on delimiters>] [-c 1-7] - divide output by columns depending on delimiter and print out 
+                                                                             certain colums with -f. -c is for chars 1-7.
+>> - appends to file. Does not replace contents. Like > otherwise
+
+xxd <target file> - shows bytes in hexadecimal system/ASCII code. If byte can not be shown for example new line it is replaced with a ".".
+                    Rows are formatted in 16 bit segments hexadecimal am i right.
+
+find <directory/starting point> -name '<match pattern>'[-user <username>] [-printf <source format> -> <dest format>] [-exec <cmd> {} \;] [-inum]
+                    [-mmin -<time>] - -mmin checks if the lasti modify time is <time>. If -<time> it is lesser than time. + is greater. 
+                    used to find all files in subdirectories. Goes through the file system on two passes. The first is the filter pass and after
+                    it prints it.  Printf changes output format. -exec executes a command on all the files find finds. No guarantee of order of
+                    result.-print0 - hexadecimal zero as separator. No new lines. -ls - prints output like ls. -inum - search by inode number
+
+tr [-s] <sym1> [<sym2>] - replaces sym 1 in string with sym 2. -s replaces 5 of the same symbol with one. Example traaaa -> tra. No sym2 for -s
+                          tr ao bd - replaces a with b and o with d. tr does not work on files. -s means squeeze. Needs a pipe
+
+uniq [-c] - if two rows match it leaves only one. The rows must come one after another. -c is for number of occurences
+
+sort [-k] [-t] [-n] <file name>- sorts file. -k can sort based on column. -t field separator. Sorts in lexicographical order. -n - numeric sort
+
+rev - reverses
+
+less and more - they are called pagers. Used to scroll through file. They divide files into pages. Man works with less
+
+grep [-v] [--color] [-i] [-A<num>] [-n] [-B<num>] [-C <num>] <pattern> - -v matches all that do not mach the pattern. --color colors what is 
+                            matched. -i for case insensitive. By default grep is case sensitive. -A<num> give me number of lines after match.
+                            -B like -A but before. -C is number of rows before and after matched line. -n is for numbering found rows. 
+                            You can grep [[:digit:]] - greps all lines with class digit
+
+fgrep - fast grep -> no reex
+egrep - extended grep -> matches extended regex
+
+sed -r - yay. -r is for extended regex. Delimiters for sed can be / but also % or,. Wtf?!?. Explains substititution and global flag. 
+         Matches everything on row
+
+awk [-v "<var>=<value>"] '<conditions for matching row> [-F <delimiter] {<awk language expression>} END {<something is done after the expression 
+                                    is done}' <file> - -v lets us give named arguments to awk 
+                                    '$2 == 3 { print $9 } ' - give col nine where col 2 is equal to 3. Instead of == you can use ~ for found 
+                                    in row.
+
+"\s" - used to specify a space
+"\t" - used to specify a tab. Does not always work. Doesn't work with grep and cut. Works with cut. To make it work with grep you can use $'\t'
+
+xargs - ask Angel. Builds a single command depending on size of input. Unlike ls
+
+tar [-c] [-x] [-v] [-t] [-v] [-a] [-J] - v shows the names of files added or extracted from archive. -f tells to work with file and not magnet 
+                                         tape. t lists contents of file. -J is xz compression. can use * so the name of the file is generated from
+                                         the source files
+
+xz [-d] - for compression. -d is for decompression. You can compress a non tar file directly
+
+ps [-e] [-f] [-u <user>] [-o format] [a] [x] [-l] - processses only for user is with -u. 
+                                       -e is see all processes? -o user pid will display only user and pid from ps. pid=process changes the name
+                                       pid= gives the column without the header. -f displays arguments/flags given to command. [a] removes
+                                       BSD format restrictien for self non [-flag] arguments are acceptde. [x] is like a but for all users.
+                                       Has a column that shows if a process is stopped S, running R, terminated T? You need -l flag for this
+
+top - you know it
+htop - colored top
+
+paste [ -s ] <file1> <file2> ... <filen> - merges n files. -s transposes the files(rows become cols and cols rows)
+
+rm [-i] [-f] [-r] - i prompts for removal. -f never prompt ignore nonexistent files. -r recursively
+
+mktemp - creates temporary file and returns it's name. File is not deleted after the end of the program
+
+kill -l - lists signals
+
+set -e - bash strict regime. Bashism. The whole program dies if a single command fails
+set -o pipefail - if anything in a pipe fails the whole pipe is failed. By default the exit status of a pipe is the 
+                  exit status of the last commandBashism
+
+set -u - calling undefined variables causes bash to die. Bashism!!
+
+jobs - shows stopped jobs
+fg <num> - starts a stopped job in foreground
+bg <num> - starts a stopped job in background. If you start an interactive program like vim in background the process will be automatically stopped
+
+chsh - change shell and stop bash
+
+source <scriptname> - like ./<scriptname> but more readable. It executes commands in current shell not in a subshell like ./ or bash <scriptname>
+
+set - shows all variables. Can be used inside script to change variables
+unset - removes a variable
+env - prints environment variables. Inherited by children
+printenv - Like the command above.
+
+exit <status number> - used in shell script to stop the script with the exit status. You must explain in documentation what the status means
+                       0 is always success. By default scripts exit with the exit status of the last command.
+
+test <expression> - give it an expression and i will see if it is valid. This was the command used for ifs. It is the same as [ <test expression> ]
+
+read [-p <text>] [-d <delimiter>] <var> - 
+                        lets you enter a var name. -p lets you cout text before entering variable. Text will not show if you feed it an argument 
+                        with someting like a pipe. By default reads to first whitespace if there is more text after that and a second variable that
+                        text will go in the next variable
+
+comm <file 1> <file 2> - prints lines unique to line 1, to line 2 and the ones that are the same
+
+seq <from> [<increment>] <to> - creates the sequence of numbers from to to and by what to increment. For example seq 1 2 6 ->  1 3 5
+
+msg y [n] - enable messaging to your terminal. n is for disable
+
+<cmd> | wall - the first symbol is a pipe. writes to everybody
+
+<cmd> | write <username> - writes to a concrete user
+
+shift - shifts arguments to the left
+
+who [-a] - shows users who are logged in. -a lists all users
+
+break [<n>] - break n number of cycles. If you are inside a double for. break 2 will break both fors
+
+expr <arithmetic equation> - solves basic arithmetics. You need to escape symbols like > and >=
+
+basename - gives file name
+
+dirname - gives the directory path of the file
+
+md5sum - creates md5sum. Can calculate md5sum and compare to check if two files are the same or use diff
+
+sha256sum - use sha 256 and up and not md5 sum
+
+<cmd> < <file> - redirects std::in to come from file
+<cmd> > <file> - redirects std::out
+
+ldd <file> - shows libs used by c file
+
+&> - both std in to std out
+2>&1 - std::err to std::out
+
+/usr/share/file/magic.mgc - database with popular file types maybe. Look it up
+
+
+Examples: Command to get the port of tcp in /etc/services: 
+       1) cat /etc/services | grep "^ftp\s" | tr -s ' ' | cut -d ' ' -f 2 | cut -d '/' -f 1  
+       2) tr -s "\n" can be used to remove newlines
+       3) cat /etc/services | tr -s ' ' | cut -d ' ' -f 2 | cut -d '/' -f 1 | sort | grep '^[1-9]' | uniq | wc -l - unique ports in /etc/services
+
+Examples: echo $((2*3)) -> 6;
+          echo "5+6" | bc -> 11;
+          echo "1 2 3" | sed -e 's/ / + /g' | bc -> 6
+          test 5 -eq 15 && echo "Yes" || echo "No"
+          [ $# -eq 1 ] || exit 1 - error if given les or more than one error
+          read a b c < <(echo "one two three)" - to avoid problems with subshels in case of echo "one two three" | read a b c
+          read a b c <<< "one two three" - like the above, but with a bashism. Don't use but know
+          diff -udB <file to patch> <file from patch> > p.txt
+          patch < p.txt - patches file to patch if they are in the same directory
+          cat 123{aaa,bbb,ccc}123 - searches for 123aaa123, 123bbb123, 123ccc123
+          echo ~nikolay - prints user nikola's home dir
+          ${file%.cpp} - gives the name of the file without the cpp at the end
+
+C commands:
+    fork()
+    execvp(<program name>, <args array>)
+    open(<file name>, O_WRONLY | O_CREAT, <rights>) - opens a file in write only mode or creates it with the given rigths(for example 640)
+    close(STDOUT_FILENO) - closes std::out, destroys it. In place of STDOUT_FILENO you can give any file descriptor or result from open for example
+    dup(<file descriptor>) - gets a file descriptor for example the result from the open command and makes a copy of it with assigning it 
+                            the first available fd number
+    dup2(<file descriptor 1>, <file descriptor 2>) - this closes file descriptor two and redirects it to point at the same place that fd1 points to
+                            both descriptors remain in the end, but they point at the same place 
+    errx - for error of the user maybe?
+    err - for system or program err
+    warn - for system or program warn
+    warnx - for user warning 
+    write
+    read
+    open - returns -1 on error and a file descriptor in the deafault case
+    close
+    fprintf
+    lseek - move file marker to an offset depending on what. File marker is at the first byte of the file and is moved by every operation
+    stat
+    __attribute((packed))__ - слага се на структура и така се премахва padding-ът, който се използва, т че елементите на структурата да са с 
+                            alligned
+
+    управление на паметта
+    семинар по системна администрация
+    системно програмиране

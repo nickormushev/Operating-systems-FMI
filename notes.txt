@@ -1,0 +1,269 @@
+what does a file/inode require:
+    file type
+    name - for the fs the names of files are id's of inodes. This field is and id
+    size
+    UID
+    permissions
+    GID
+    access time
+    change time
+    modify time
+    use stat command to see times
+    data blocks
+    block count - how many data blocks make te file
+    link_count - how many names point to the file in the directory tables. Like symlinks and hardlinks
+
+all of this is in an inode
+
+inodes are in superblock 
+
+we have four sectors at the start
+
+what info does a partition have. Where the partitions start
+    He explains the superblock. It contains:
+        fs-type
+        block size - минималната единица за четене и за писане във fs
+        data blocks - fixed number for amount of data blocks
+        1 billion blocks of 1KB = 1TB
+        1 million blocks of 1KB = 1GB
+        uint32_t - unsigned int 32 bits = 4 bytes int16_t - 16 bits = 2 bytes int signed
+        int8_t - 8 bits = 1 byte int singed
+
+we make an array of 4 bytes which point to an address of a datablock
+    the 13th element points to a data block that contains the address of other data blocks
+    the 14th element is a double pointer
+    the 15th element is a triple pointer
+
+a directory table:
+    it contains the inode number and the names of the files. The directory is a file so it has an inode
+    If a an inode is a directory. In it's datablocks we write the the table
+
+the first inode is the one that contains the root directory and we start from there
+
+Deletion of a file:
+    remove the entry of the folder file from the table of the inode of the directory that contains the file
+    if you delete a file the permissions of the directory > permission of file, because we change the directory by changing the file
+
+two files can have the same inode - symlinks/hardlinks
+
+the inode size is fixed. That is why the data blocks contain the directory table
+
+the table contains the inode id first because it is a fixed size and after that we read the variable size string/name of the file
+hard links can't refer directories. Cycles appears
+sym links rights < file rights. Basically you cannot access a file with no rights through sym links with all rights
+
+mounting of file systems to access files on hard disk/usb and so on and so forth. This leads to a limitation of hard links.
+Hard links can point only to their file system because the inode number in the file system must be unique
+
+unix time - how much time in seconds has passed since 1 January 1970
+
+at the start if ll when you have the permission bits there is one bit before the access rights. The options for it are:
+    -l - symlink
+    -c - character device(mouse, keyboard, vmmonitor, etc). Like char maybe
+    -b - block device(partition, hdd, ssd, etc). Like array of chars maybe
+    -p - named pipe
+    -s - socket file. Like a pipe but processes know each other. Like a session in the internet
+    -d - directory
+    - '-' - regular file
+
+directories:
+    /etc - configuration for your OS
+    /home - user files
+    /usr - programs used by the user
+    /var - common files for all users(общи файлове). Here are database files
+    /root - home for root
+    /bin - basic programs for the OS
+    /sbin - super user basic programs
+    /boot - for boot
+
+interrupts:
+    inside the program - if a user does something or a program breaks it makes an exception. Interrupt
+    outside the program for the OS - Your program wants something from the kernel. Goes intro protected mode. The kernel takes control of the PC
+    for parralelism - for the process and central hardware to work together
+    more:
+    these are used periodically so processes switch betwean each other and look like they work at the same time
+    input output interrupts
+
+
+ipc: 
+    Talking processes have 3 channels std::in, std::out, std::err. std::out and std::err are a part of the same communication channel
+    std::in is in a seperate channel. Communication channels are a part of the kernel in UNIX. The 3 stream of data are identified by
+    their fd or file descriptor whic are std::in = 0, std::out=1, std::err=2. Theese fd are inherited/copied when using fork(). For example
+    when we start ls -l we make a fork and after that an exec, but the output is forwarded to the same terminal which is the same std::out or
+    std::err. During this process the terminal/console waits for it to finish. When using a fork enironment variables are inherited. Use env. 
+    They + the arguments + the fds tell a program what to do and how to act.
+
+multitasking and ipc(Spinlock and semaphors):
+    more than one process to work at the same time. A method by which multiple processes communicate with each other is a memory queue.
+    If lets say three processes send information to the network card which has to forward that information to the internet they place it in the 
+    queue from where the networking device reads it. If I want to add an entry to the queue I have to also change the pointer pointing to the 
+    last element and increment it by one so i don't overwrite infromation. If theese operations are treated as separate tasks or messages 
+    it could lead to an error in the queue: save the information of program 1 to the queue, save some other information from program 2 
+    and in doing so overwriting the information from program 1 and then increment the counter. This may happen if the incrementation
+    and the writing of the message are seperate processor instrucions(writes to the queue) so they should become one processor instruction
+    (not scalable). Theese are called critical sections. If in a critical section another program should not touch the queue. 
+    Today a locking mechanism is used. A bit is set to tell other processes that the queue is in use and to wait their turn. This is called
+    mutual exclusion(взаимно икзлючване). 
+    
+Spinlock:
+    To solve the above issue single-core processors systems at the start of a critical section forbid interrupts when it start writing data
+    (and in turn the switching between processes) and at the end allow it again. This obviously does not work for multi-core processors. 
+    They use the lock bit in the data that tells us if the data is free to use or another program is writing. This is called spinlock. 
+    0 means the data is free and 1 that it isn't. The changing of the lock bit must be a single instruction for the processor that reads the bit 
+    and swaps it if free. This is because if it is not it might lead to a processor error. Spinlock does not work properly if your program uses 
+    another program that also has to change the data. This may may lead to an endless cycle. For example a hardware interrupt may lead to a 
+    simmilair issue. For example the keyboard driver writes in a buffer which multiple program's critical seactions have to read and get
+    permission to write. But the buffer is still using it which leads to an endless cycle of interrupts. For this to work we need to forbid all
+    interrpts. Everyone will wait including the user. The system becomes really slow. When we write a 1 in lock we must disable interrupt for 
+    our process. Other processes must stop their interrupts when reading the bit and start them up again if they see a 1 in the lock bit
+    and then attempt to access tha data again. This enables the processor to interrupt waiting processes and do some other task. 
+    Obviously works for single-core processors aswell. The actual spinlock allows some interrupt and not others. It has more leading bits before 
+    the lock bit for this information. The spinlock mechanism is relatively fast. The issue with the critical sections is called a race condition.
+
+
+Sempahors(invented by Djikstra):
+    Depending on the process we might want to interrupt its critical section, because it is not the priority. Another more important
+    process might want to use it. This is achieved with semaphors and not by the spinlock mechanism. If a process is not doing anything it can
+    request for itself to be put to sleep. How does e samphor work? Let's say we can process 40 processes at a time. The semaphor has a counter
+    that starts at 40 and decrements when we start processing a new process. When it reaches 0 it starts to put other processes that request
+    process time to sleep. When a process is done processing the counter increment and the semaphor wakes up another process and starts to 
+    process it and the counter does not decrements again to 0. If the counter is negetive that is the number of waiting processes. This can
+    be a queue. Semaphor has 3 functions. Semaphor.init(<number of processes we can serve>). This initilializes the semaphor
+    and the counter value. 2) wait() - the processor wants to use the resource. 3) signal() - simulates an interrupt and it is used by a process
+    to tell other processes that it has done it's work. The queue can be a priority queue. The counter is invisible for the processes. Processes
+    can only call wait or signal.
+
+Realisation of init, wait and signal:
+
+    init(startCnt)              wait()                                                        signal()
+        cnt = start cnt;            spin.lock(lock);                                            spin.lock(lock);
+        queue L = null;             cnt = cnt - 1; //start of critical section                  cnt = cnt + 1; //start of critical section
+                                    if cnt < 0 //no more processing space                       if cnt <= 0
+                                        L.put(self); //Add calling process to queue(sleep)          pid = L.front();
+                                        spin.unlock(lock);                                          wakeup(pid);
+                                        block(); //call some other program to do the rest       spin.unlock(lock);
+                                    else 
+                                        spin.unlock(lock);
+
+
+mutex: this is the mutual exclusion task that the skeleton solved in lectures. In short a must wait for b to finish
+
+randezvous: in this task we have a=(a1 a2) b=(b1 b2) we want a1 < b2 && b1 < a2. So we need to semaphors which tell a2 to wait and for b2 to wait
+            then send out a signal when they are done. If we write wait in both cases before the signal this will lead to a dead lock a2 is 
+            waiting for the signal from b1 and b2 from the signla from a1. This is called a dead lock and you have written your code incorrectly
+
+Dead lock: The spaghetti and the philpsophers. Philosophers are on a round table and each has two forks on either side. They require two forks to 
+            eat the spaghetti and so they can not start eating untill they get them. Using their algorithm they take the right fork but the left
+            one is taken by the person on the left. And they are at a dead lock. All of them are waiting for the fork on the left and starving
+            to death.
+
+    A code(semaphor) example:
+            a1              b1          sA.init(0), sB.init(0)
+            sB.wait()       sA.wait()
+            sA.signal()     sB.signal()
+            a2              b2
+
+
+Starvation: A process endlesly waiting for its turn in the semaphor. May arise in a priority queue or if you have multiple readers and one writer
+            for a process. Lecture 5 3rd video explains the second case and how it is solved. In short:
+            
+            Readers:                Writers:
+            m.wait()                re.wait()           re.init(1) m.init(1) r = 0.           re = room empty semaphor
+            r = r + 1               write               m - semaphor for reader operations    r = reader counter. Only when no one reads can 
+            if(r == 1)              re.signal()                                                   someone write
+                re.wait()
+            m.signal()
+            reads
+            m.wait()
+            r = r - 1
+            if (r == 0)
+                re.singnal()
+            m.signal()
+
+
+The writer starvation is solved by:
+            Readers:                Writers:
+            t.wait()                t.wait()  //the t.wait for the reader will work only if a writer appears
+            t.signal()              re.wait()   
+            m.wait()                write               re.init(1) m.init(1) r = 0.           re - room empty semaphor
+            r = r + 1               t.signal()          m - semaphor for reader operations    r - reader counter. Only when no one reads can 
+            if(r == 1)              re.signal()         t - when a writer appears all             someone write
+                re.wait()                                   incoming readers must wait            
+            m.signal()
+            reads
+            m.wait()
+            r = r - 1
+            if (r == 0)
+                re.singnal()
+            m.signal()      
+            
+
+
+
+archiving and compressing programs are different!
+
+archivers: tar and cpio
+compressors: compress, gzip, bzip2, lzma, xz.  Written in order of worst to best compression. xz is the most modern or the best 
+
+/dev/random - everytime you read the output is random
+/dev/zero - reads only zeroes
+
+/etc/passwd
+
+globbing 
+\ - escape character. Give char to find to use. Must use to escape * for interpretation of find and not shel
+shell replaces glob expressions with all txt files - Example find . -name *.txt gives! find . -name a.txt b.txt c.txt - gives error. 
+                                                     Invalid syntax
+
+b{a,p,u,e,i}g = bag, bog, beg, bug...etc
+
+example: wc - l $(cat f.txt)
+'$(cat f.txt)' = it becomes a literal
+"" - are not literal
+find . -name "$(cat f.txt)" -print - works replaces cat but puts them in "" so we have a single argument
+find . printf "%T@ %i %n %p\n" - prints %T@ time modified %i inode number and %p name of files. %n is number of hard links. Not the same for 
+                                 stat -c
+ 
+@ - before time means unix time
+
+\ explained new lines
+
+RegEx - 
+    name of class [:alnum:] - this is the name so we need [[:alnum:]] to match
+    [^ar] - symbol that are not a and r
+    (<Regex left>|<Regex, right>) - you can say either left regex or right regex
+    abc{3} -> abccc
+    (abc){3} -> abcabcabc
+    sed -r 's/(.)\1/\[\1\1\]/g - matches two identical symbols one after another
+
+Signals: 
+    SIGTERM(15) - send a signal to the process to make it stop gently. A programmer can make a handler that will make the program go to an 
+                  acceptable state for the files and the program and then terminate the program. A handler that ignores SIGTERM can be made.
+                  Basically the handler does nothing.
+    SIGHUP(1) - used for reinitialisation for a working process. If you change the nginx config if you send and SIGHUP the process is not 
+                restarted and it reads the configuration file once again. Usefull for daemons
+    SIGKILL(9) - kills process without asking it. It does not have a handler. The kernel kills it.
+    SIGSTOP(19) - ctrl-z
+    SIGINT(2) - ctrl-c
+    SIGQUIT(3)
+    
+    You can only send signals to your own processes
+Shells:
+    $SHELL - default shell location
+    /etc/profile - for bash config ~/.profile - overwrite config of global /etc/profile when you start a shell script it does /bin/bash ./<scriptname>  (it can be something else that is not /bin/bash)
+    Use source <scriptaname> - more readable. Like ./<scriptname>
+    /etc/bash.bashrc
+    ~/bashrc
+    use echo ${FOO}BAR -> Use curly braces around bash variables. Variable names only with capital letters. 
+    Bash variables work like string substitution. '.' should not be in $PATH because in a directory you can run a malware or something else!
+    When you export a variable it is copied in the child shell. It basically does a fork when creating the child and copies the environment
+    when i run a command bash it forks itself and then execs the command in its place and then the command runs
+    cat -> fork() -> bash -> exec() ->  /bin/cat
+    $? - means exit status of last command. 0 - succesfull 1-255 - failed
+    $# - number of arguments
+    $IFS - list of field terminators
+    $@ - All arguments. It migh lead to problems with the arguments. If "m n" is one argument it will be treated as two. For it to be one use "$@"
+    $* - All arguments in a single string. It works like the upper one except "$*" will lead to all arguments being displayed in one line
+    <( cat a.txt ) - creates /dev/fd/63 as a temporary file which contains the output of cat and that file is fed to the command befor the "<"
+    $0 - name of executing program
+    $$ - pid of current program
