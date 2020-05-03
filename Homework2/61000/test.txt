@@ -1,9 +1,0 @@
-Word A
-Word B
-W/ord C
-Word D
-:Word S
-Word T
-
-
-WordQ

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [ $# -lt 1 ]
+if [ $# -lt 3 ]
 then
     echo "Not enough arguments"
     exit 1
@@ -10,6 +10,18 @@ if [ $# -gt 4 ]
 then
     echo "Too many arguments"
     exit 2
+fi
+
+if [ $# -eq 4 ] && [ ! "${2}" = "distance" ] 
+then
+    echo "Too many arguments"
+    exit 2
+fi
+
+if [ ! $# -eq 4 ] && [ "${2}" = "distance" ] 
+then
+    echo "Not enough arguments. Distance requires 4"
+    exit 1
 fi
 
 if ! [ -r ${1} ]
