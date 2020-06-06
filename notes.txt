@@ -10,7 +10,7 @@ what does a file/inode require:
     modify time
     use stat command to see times
     data blocks
-    block count - how many data blocks make te file
+    block count - how many data blocks make the file
     link_count - how many names point to the file in the directory tables. Like symlinks and hardlinks
 
 all of this is in an inode
@@ -35,13 +35,13 @@ we make an array of 4 bytes which point to an address of a datablock
     the 15th element is a triple pointer
 
 a directory table:
-    it contains the inode number and the names of the files. The directory is a file so it has an inode
-    If a an inode is a directory. In it's datablocks we write the the table
+    It contains the inode number and the names of the files. The directory is a file so it has an inode
+    If an inode is a directory. In it's datablocks we write the table
 
-the first inode is the one that contains the root directory and we start from there
+The first inode is the one that contains the root directory and we start from there
 
 Deletion of a file:
-    remove the entry of the folder file from the table of the inode of the directory that contains the file
+    Remove the entry of the folder file from the table of the inode of the directory that contains the file
     if you delete a file the permissions of the directory > permission of file, because we change the directory by changing the file
 
 two files can have the same inode - symlinks/hardlinks

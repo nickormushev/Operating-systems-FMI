@@ -1,0 +1,105 @@
+Error codes:
+1)Not enough argument 2)Open file error 3)pipe error 4)dup2 error 5)exec error 6) read error 7) write error 
+8)No more inodes 9) lseek error
+
+Day 1: Started by reareading the problem.txt a few time. Found out I did not understand all of it at
+first.  I was expecting to have to access the memory directly in some way so I could write my files
+to it, but eventually I understood that it was just the single file through which we would do it by
+saving and reading the information to it. 
+
+I remembered what inodes were and I knew more or less how to include them but the superblock was
+another story. I was also not sure how to divide up my memory into appropriate chunks so I have
+enough inodes.  I decided after a bit of reading and finding Linus Torvald's github with file
+systems like ext4 and zfs to begin writing some code. For a start I needed to read the environment
+variable and I googled and found the getenv command.  Read the file and decided to get its size.
+Made sure that was working so I went on to division of memory.
+
+I also decided due to lack of time that my datablock size would be equal to 512 bytes. A data block
+can be larger but that would lead to greater wastage of memory if I am storing small files. The
+small blocks lead to more metadata to keep track of but for now this looks like the easier route.
+
+Late at night the same day: I found this link as a resource from the wikipedia page on inodes:
+http://www.linfo.org/inode.html . After reading I found out that the typical heuristic for a file
+system is to have one inode per 2K bytes. Will implement tommorow!  An inode without the name is 20
+bytes. Let's make it 30 for the name even though it can be longer. We have 16777 inodes for 32 MB of
+starage. 
+
+Day 2: Forgot that I had to add the dataBlock[10] array that pointed to the dataBlocks used by the
+file and on top of that the double and triple pointer dataBlocks that point to other dataBlocks. As
+of now I imagine them as offsets in the file so I suppose they will be integers. That might change
+though. Also forgot that I needed the name size so I know how many bytes to read.  The actual size
+now became 80 bytes for a single inode with 10 bytes for the name so the above calculations are
+false. 
+
+Day 3: I asked Angel for help and understood that it is a good idea not to save the name of a file
+in an inode but instead in the directory that contains it as a map between the inode and the name of
+the file. This was actually a pretty good idea and meant that the inode is a fixed size, meaning I
+can easily search for it.  Solved a ton of the issues of writing the inode and made it so I could
+finally implement mkfs fully. Decided I should finally decide on error codes. They will be at the
+top of this file!  Might use this idea to store the name of a file if it is larger than x number of
+bytes, where x is the limit of the fileNames for the table.
+
+I need to think of what I want in the superblock exactly. Seems it would be appropriate to have the
+free data blocks and the ones in use.  This would help with determining what datablocks to give out
+when writing to a file and in need of more space. This might be needed for the inodes aswell since I
+can't just remember the last inode written. As of this moment I am definitely lacking this
+functionality and I am unsure of how to implement it. Maybe the size of the superblock will be
+detirmined based on the size of the give file(take the number of data blocks and Inodes and have an
+array of numbers that determines which ones are free and which ones aren't), maybe I can have a flag
+an search linearly. The above means I need the number of inodes and the number of data blocks in the
+superblock aswell. Also I want to number my inodes sequentially so I can easily find them by using
+their size.
+
+Actual number of inodes is still 16777 for 32MB which I multiplied by 64 which as of now is the size
+of a single Inode.  This is around 1 MB of the whole file.
+
+Day 4: I decided to have a dynamic arrays of free datablocks and inodes in my superblock that I will
+give out when they are needed. This will work like a stack like memory. When I create the superblock
+during mkfs all inodes and dataBlocks will be free. An index will point to the top of the stack.
+When I give out and inode I will move the index downwords and when I free up an inode I will
+increase it and on that spot place the id of the now free inode. The same goes for the datablock. In
+time this might lead to issues because I will give out datablocks randomly and not based on spatial
+locality to the file, but I honestly will be glad if my filesystem works by the end date.
+
+The inode and datablock id's will be sequential from 0 to n - 1. This way if I give write to
+datablock with index i I can just lseek to i * data_block_size + data_block_start_offset and write
+there. Started working on this idea but I hit a dead end. If the superblock is dynamic that means
+that I can not calculate how many datablocks I need
+
+Day 5: Finally after some exams I have time to write the filesystem. I still struggled with keeping
+track of the free space I had. I was thinking of a stack like structures but the dynamic memory that
+was required in the superblock caused more headaches than it solved. I finally decided to look at a
+real superblock and searched for the ext4 one.  In the process I found this
+link(https://ext4.wiki.kernel.org/index.php/Ext4_Disk_Layout#Data_Block) and was suprised to find
+out that the superblock just had the count of the free inodes and data blocks, but didn't bother
+with knowing which they were. The only metadata it had conserning this is the first free inode.
+Googled some more and found this site:
+https://www.cs.uic.edu/~jbell/CourseNotes/OperatingSystems/12_FileSystemImplementation.html which
+looked promising and it was. At the section of free-space management I saw the different options
+that normal file systems use to solve this issue and looking at the picture of a linked list it gave
+me the idea to modify my stack idea and make it work like a the linked stack in the picture. What do
+I mean?  Well every free inode will keep the index of the next one as part of its metadata. The
+superblock will point to the first free inode. Once an inode needs to be allocated it will give out
+the first and it will start pointing to it's child. When a file is deleted a the newly freed inode
+will start pointing to the old top of the stack and the superblock will remember it's index! The
+same logic will be applied to the data blocks to keep track which are free and which aren't. If the
+nextFreeInodeId = -1 that means the inode is allocated and in use so this field is meaningless.
+
+Decided to leave the entire first 512 bytes for the superblock. The idea is that it would be easier
+to search if I didn't have to take into account a superblocks aswell. I know actual file systems
+save the superblock after every x number of inodes but here this just seemed simpler. If I have time
+might want to refactor.
+
+Finally managed to finish the mkfs command and I am glad. The linked list/stack idea seems to have
+prooved a good idea. Overall I know this might be slow in the long run especially if you consider
+that seeking is the slowest part of working with a hard disk. The random allocation of data blocks
+means that in time the files will have been allocated data_blocks that are far apart and not in
+ascending order based on offset. This will lead to a lot of seeking back and forth and will be
+indeed slow, but I think it is good enough for my first try while still learning and trying to
+minimize the awful math.
+
+I finally calculated the required space for the inodes correctly. Previously I was faced with issues
+conserning offsets. Deciding to check how many inodes I can have in a single data_block lead to the
+correct approach. After that I made the desired amount of datablocks a multiple of those per single block
+and divided the first by the second. This gave me the needed amount of datablocks to store all my
+inodes. Then I multiplied the number of datablocks by their size and got the inodeSpace.

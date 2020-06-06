@@ -183,7 +183,7 @@ C commands:
     dup2(<file descriptor 1>, <file descriptor 2>) - this closes file descriptor two and redirects it to point at the same place that fd1 points to
                             both descriptors remain in the end, but they point at the same place 
     errx - for error of the user maybe?
-    err - for system or program err
+    err - for system or program err. Uses errno.
     warn - for system or program warn
     warnx - for user warning 
     write
@@ -195,6 +195,16 @@ C commands:
     stat
     __attribute((packed))__ - слага се на структура и така се премахва padding-ът, който се използва, т че елементите на структурата да са с 
                             alligned
+    qsort - сортира масив
+    setbuf - can be used to set buffer or set stream as printf as unbuffured. Reason is so that write is not executed before printf below
+            Example: printf(c)
+                     setbuf(3)
+                     write(c)
+
+            Example: 
+                char foo[10];
+                snprintf(foo,...) //Това е по-правилно от горното, но и по-тегаво. По-полезно ще е него да имплементирам
+                write(fd, foo, n)
 
     управление на паметта
     семинар по системна администрация
