@@ -1,6 +1,6 @@
 Error codes:
 1)Not enough argument 2)Open file error 3)pipe error 4)dup2 error 5)exec error 6) read error 7) write error 
-8)No more inodes 9) lseek error
+8)No more inodes 9) lseek error 10) Corrupted superblock
 
 Day 1: Started by reareading the problem.txt a few time. Found out I did not understand all of it at
 first.  I was expecting to have to access the memory directly in some way so I could write my files
@@ -103,3 +103,53 @@ conserning offsets. Deciding to check how many inodes I can have in a single dat
 correct approach. After that I made the desired amount of datablocks a multiple of those per single block
 and divided the first by the second. This gave me the needed amount of datablocks to store all my
 inodes. Then I multiplied the number of datablocks by their size and got the inodeSpace.
+
+Day 6:
+I could not do as much as I wanted to due to lack of time but still I was happy at least mkfs
+worked.  Decided to keep the fileSize inside the inode so I know what I wanted to read and went onto
+considering how to check validity for fsck. For now I am unsure how to see if data has been
+corrupted except by using some sort of hash which seems a bit too much. I remembered the CRC check
+used in networking to calculate a checksum for packets to detirmine if they were modified during
+trasmission. I decided to look into a simple checksum algorithm to see if data has been corrupted. I
+found the Fletcher's Checksum algorithm which takes the idea of a simple checksum that just adds up
+the fields of data and divides by modulus x and modifies it so it does not have the issue of only
+having x possible states and also gives importance to the order of the values so that 10 11 12 don't
+give the same checksum as 12 11 10. It solves the first and second issue by adding a second sum. We
+add to it the values of the original sum on every iteration. This means that if 10 is the first
+value it would be added 3 times to the second sum. So the position now matters and the checksum of
+the above example will not be the same. We divide by modulus 255 for Fletcher16, because we need to
+keep the values in the first part of the 16 bytes to zero so we can combine the two values of the
+first and the second sum in the end using a logical or and shifting the data to the left. Here is
+the link to the algorithm on wikipedia. I took the code from here though it is pretty easy to
+implement when you understand how and why it works:
+https://en.wikipedia.org/wiki/Fletcher%27s_checksum
+
+The issue I faced now was how to convert my structure into integer bytes so could add them up and
+calculate the sum. I thought of writing them to the file and then reading the data, but that could
+mean that during writing the data could get corrupted and the whole of idea of the checksum becomes
+pointless. Then I googled believing that there needs to be a way to treat the structure as an array
+of bytes and sure enough there was. This is really smart and gave me a new appreciation of pointers.
+Found this stack overflow page:
+https://stackoverflow.com/questions/484357/trying-to-copy-struct-members-to-byte-array-in-c which
+pointed out that I could just get the address of the structure in memory and convert it to a 
+uint8_t *byteArray. I could not believe I could do something like that which is so logical and
+fascinating. As I said pointers are awesome!!!! Now I could use the Fletcher checksum algorithm.
+
+I met with another issue! Calculating the value of the checksum lead to me changing the superblock and inode
+data so when I calculte it a second the the result would be different. I remembered I saw some checkbytes 
+in the wikipedia article for the checksum. They were made so on recalculation of the sum the checksum would
+give 0x00 as an answer and this looks like the right solution for me.
+
+The above idea failed. The algorithm did not output 0x00 and i decided just to make the checksum value equal
+zero temporarily so the value calculated is the same. Seemed simpler.
+
+I tried to do the same for the Inodes but that did not work because they have a pointer(the array) which
+initialized with a different value every time I ran the program. I could use memcopy and write the data to an array of
+uint8_t bytes but since we haven't studied it i decided against that. If I have time I might revisit and fix this.
+I do not know if this idea is a good one aswell cause I would not be validating the files that contain id's aswell.
+Need to write a custom function that does that. I will try to add it later as i said.
+
+The last idea I have for fsck is to check if the amount of free Inodes is equal to the amount specified in the superblock
+Same could be done for the datablocks. I can just walk through the inodes and datablocks and see if the numbers match.
+I believe that fsck has the idea of validating the structure of the file system and not all files. So I will not be looking at
+data blocks.

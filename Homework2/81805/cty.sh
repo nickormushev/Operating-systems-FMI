@@ -48,11 +48,6 @@ function testForType1 {
 
 function search {
 
-    #if testForType1 ${1}
-    #then
-    #    return 0
-    #fi
-
     word=${1}
     fileData=$(cat ${file})
 
