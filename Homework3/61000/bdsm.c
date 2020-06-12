@@ -30,11 +30,11 @@ typedef struct {
 } Inode;
 
 typedef struct {
-    uint16_t data_block_size;
-    uint16_t inodeSize;
+    size_t data_block_size;
+    size_t inodeSize;
     uint16_t inodesPerDatablock;
-    uint32_t size;
-    uint32_t filesystemSize;
+    size_t size;
+    size_t filesystemSize;
     uint32_t numberOfInodes;
     uint32_t numberOfDataBlocks;
     uint32_t numberOfFreeInodes;
@@ -45,6 +45,11 @@ typedef struct {
     uint64_t dataBlockSpace;
     uint16_t checksum;
 } Superblock;
+
+typedef struct {
+    uint32_t inodeId;
+    char fileName[28];
+} DirTableRow;
 
 Superblock superblockConstr(int fileSize, uint16_t data_block_size, int numberOfInodes,
                             uint64_t inodeSpace, int numberOfDataBlocks, uint64_t dataBlockSpace) {
@@ -67,10 +72,10 @@ Superblock superblockConstr(int fileSize, uint16_t data_block_size, int numberOf
     return sb;
 }
 
-Inode inodeConstr(int inodeId, char fileType, uint16_t uid, uint16_t gid,
+Inode inodeConstr(char fileType, uint16_t uid, uint16_t gid,
                   uint16_t permissions, time_t modificationTime) {
     Inode i;
-    i.id = inodeId;
+    i.id = -1;
     i.uid = uid;
     i.gid = gid;
     i.fileType = fileType;
@@ -90,8 +95,26 @@ Inode inodeConstr(int inodeId, char fileType, uint16_t uid, uint16_t gid,
     return i;
 }
 
+DirTableRow dirTableRowConstr(uint32_t inodeId, const char* name) {
+    DirTableRow newDirTableRow;
+    newDirTableRow.inodeId = inodeId;
+    strcpy(newDirTableRow.fileName, name);
+
+    return newDirTableRow;
+}
+
+void errCheck(int fd, int commandReturnValue, int errCode, const char* errMsg) {
+    if(commandReturnValue < 0) {
+        int temp = errno;
+        close(fd);
+        errno = temp;
+        err(errCode, "%s", errMsg);
+    }
+}
+
 void print(int fd, const char * msg) {
-    write(fd, msg, strlen(msg));
+    int numWrittenBytes = write(fd, msg, strlen(msg));
+    errCheck(fd, numWrittenBytes, 7, "Failed to print message"); 
 }
 
 int myOpen(const char * fileName, int mode) {
@@ -104,45 +127,39 @@ int myOpen(const char * fileName, int mode) {
     return fd;
 }
 
+
 uint64_t mySeek(int fd, uint64_t offset, int mode, const char * errMsg) {
-    int pos;
-    if((pos = lseek(fd, offset, mode)) < 0) {
-        int temp = errno;
-        close(fd);
-        errno = temp;
-        err(9, "%s", errMsg);    
-    }
+    off_t pos;
+    pos = lseek(fd, offset, mode);
+    errCheck(fd, pos, 9, errMsg);
 
     return pos;
 }
 
-Inode readInodeById(int fd, Superblock sb, int inodeId) {
-    Inode readInode;
-    int offsetPerNInodes = sb.data_block_size - sb.inodesPerDatablock * sb.inodeSize;
+void seekInodeById(int fd, Superblock sb, int inodeId) {
+    long offsetPerNInodes = sb.data_block_size - sb.inodesPerDatablock * sb.inodeSize;
     long ofssetAmmount = (inodeId / sb.inodesPerDatablock) * offsetPerNInodes;
     long inodeOffset = sb.data_block_size + inodeId * sb.inodeSize + ofssetAmmount;
 
     mySeek(fd, inodeOffset, SEEK_SET, 
            "Couldn't seek inode during InodeCount validation");
+}
 
-    if(read(fd, &readInode, sizeof(Inode)) < 0) {
-        int temp = errno;
-        close(fd);
-        errno = temp;
-        err(7, "%s", "Inode could not be read");  
-    }
+Inode readInodeById(int fd, Superblock sb, int inodeId) {
+    Inode readInode;
+    seekInodeById(fd, sb, inodeId);
+
+    int readValue = read(fd, &readInode, sizeof(Inode));
+    errCheck(fd, readValue, 6, "Inode could not be read");
 
     return readInode;
 }
 
-void readSuperblock(int fd, Superblock * sb, const char * errMsg) {
+void readSuperblock(int fd, Superblock * sb) {
     mySeek(fd, 0, SEEK_SET, "Error seeking to start of file ine readSuperblock");
-    if(read(fd, sb, sizeof(Superblock)) < 0) {
-        int temp = errno;
-        close(fd);
-        errno = temp;
-        err(10, "%s", errMsg);    
-    }
+    int readValue = read(fd, sb, sizeof(Superblock));
+
+    errCheck(fd, readValue, 6, "Superblock could not be read");
 }
 
 //reads Inode. This bit of code was often repeated so I added this function
@@ -157,12 +174,8 @@ void readNextInode(int fd, Inode * inode, int i, Superblock sb) {
                "lseek failed in skipping offset in inode validation");  
     }
 
-    if(read(fd, inode, sizeof(Inode)) < 0) {
-        int temp = errno;
-        close(fd);
-        errno = temp;
-        err(7, "Read of inode failed");
-    }
+    int readValue = read(fd, inode, sizeof(Inode));
+    errCheck(fd, readValue,6, "Read of inode failed");
 }
 
 void initDataBlocks(int fd, Superblock sb) {
@@ -180,12 +193,9 @@ void initDataBlocks(int fd, Superblock sb) {
             nextFreeDataBlockIndex = -1;
         }
 
-        if(write(fd, &nextFreeDataBlockIndex, sizeof(int)) < 0) {
-            int temp = errno;
-            close(fd);
-            errno = temp;
-            err(7, "Error while writing index of next data block in initDataBlocks");
-        }
+        int writtenBytes = write(fd, &nextFreeDataBlockIndex, sizeof(int));
+        errCheck(fd, writtenBytes, 7,
+                "Error while writing index of next data block in initDataBlocks");
 
         mySeek(fd, sb.data_block_size - sizeof(int), SEEK_CUR,
                "Error lseeking to next next data block i initDataBlocks");
@@ -227,7 +237,7 @@ void printInode(Inode i) {
 
 void initInodes(int fd, Superblock sb) {
     int testOffset;
-    Inode inode = inodeConstr(-1, 'd', 0, 0, 755, time(NULL));
+    Inode inode = inodeConstr('d', 0, 0, 755, time(NULL));
     mySeek(fd, sb.data_block_size, SEEK_SET, "lseek failed in during start of inode initialization");
 
     int inodeOffset = sb.data_block_size % sb.inodeSize;
@@ -253,42 +263,48 @@ void initInodes(int fd, Superblock sb) {
         inode.checksum = 0;
         inode.checksum = Fletcher16Checksum((uint8_t*) &inode, sizeof(Inode));
 
-        if(write(fd, &inode, sizeof(Inode)) < 0) {
-            int temp = errno;
-            close(fd);
-            errno = temp;
-            err(7, "Write of inode initialization");
-        }
+        int writtenBytes = write(fd, &inode, sizeof(Inode));
+        errCheck(fd ,writtenBytes, 7, "Write of inode initialization");
     }
     
     mySeek(fd, inodeOffset, SEEK_CUR, "Final lseek for offset failed in inodeInit");
 }
 
-void writeInode(Inode i, Superblock * sb, int fd) {
+void delegateInode(int fd, Superblock * sb, Inode * i) {
     if(sb->numberOfFreeInodes == 0) {
         errx(8, "No inodes are left. File cannot be created");
     }
 
-    //int inodeOffset = sb->firstFreeInode * sb->inodeSize;
-    //mySeek(fd, inodeOffset + sb->data_block_size, SEEK_SET, 
-    //       "Error seeking the position of an inode in writeInode");
-
     //Reads the currently written inode and gets the index of the next
     //one that is free and we write that to the superblock. After that we go back
-    //To "create" the inode
+    //to the id of the inode we want to "create"
     Inode buff = readInodeById(fd, *sb, sb->firstFreeInode);
     sb->firstFreeInode = buff.nextFreeInode;
-
     mySeek(fd, -sizeof(Inode), SEEK_CUR, 
-          "Error seeking back to the position of an inode in writeInode");
+          "Error seeking back to the position of an inode in delegateInode");
     
-    i.checksum = Fletcher16Checksum((uint8_t *) &i, sizeof(Inode));
+    //Changes the id of the node to be that of the free inode.
+    i->id = buff.id;
+    i->checksum = Fletcher16Checksum((uint8_t *) i, sizeof(Inode));
 
-    if(write(fd, &i, sizeof(Inode)) < 0) {
-        err(7, "Error writing Inode while writingInode");
-    }
+    int writtenBytes = write(fd, i, sizeof(Inode));
+    errCheck(fd, writtenBytes, 7, "Error delegating Inode");
 
     sb->numberOfFreeInodes--;
+}
+
+void writeInode(int fd, Superblock sb, Inode i) {
+    seekInodeById(fd, sb, i.id);
+    int writtenBytes = write(fd, &i, sizeof(Inode));
+    errCheck(fd , writtenBytes, 7, "Error writing inode"); 
+}
+
+void writeSuperblock(int fd, Superblock sb) {
+    mySeek(fd, 0, SEEK_SET, 
+           "Failed to seek to start of file while writing Superblock");
+
+    int writtenBytes = write(fd, &sb, sizeof(Superblock));
+    errCheck(fd , writtenBytes, 7, "Error writing Superblock"); 
 }
 
 int getFileSize(const char * fileName) {
@@ -348,19 +364,23 @@ void validateInodes(int fd, Superblock sb) {
         uint16_t readChecksum = inode.checksum;
         inode.checksum = 0;
         if(readChecksum != Fletcher16Checksum((uint8_t*) &inode, sizeof(Inode))) {
-            errx(10, "Inode initialization failed! Inode Corrupt");
+            close(fd);
+            errx(11, "Inode initialization failed! Inode Corrupt");
         };
 
         if(inode.id != i) {
-            errx(10, "Inode initialization failed! Wrong inode id!");
+            close(fd);
+            errx(11, "Inode initialization failed! Wrong inode id!");
         }
 
         if(i != sb.numberOfFreeInodes - 1 && inode.nextFreeInode != i + 1) {
-            errx(10, "Inode initialization failed! Wrong nextFreeInode");
+            close(fd);
+            errx(11, "Inode initialization failed! Wrong nextFreeInode");
         }
 
         if( i == sb.numberOfFreeInodes - 1 && inode.nextFreeInode != -1) {
-            errx(10, "Initialization of last inode failed. Wrong nextFreeInode");
+            close(fd);
+            errx(11, "Initialization of last inode failed. Wrong nextFreeInode");
         }
     }
 
@@ -377,19 +397,17 @@ void validateDataBlocks(int fd, Superblock sb) {
             nextFreeDataBlockIndex = -1;
         }
 
-        if(read(fd, &nextFreeDataBlockIndex, sizeof(int)) < 0) {
-            int temp = errno;
-            close(fd);
-            errno = temp;
-            err(7, "Error while reading index of next data block in initDataBlocks");
-        }
+        int readBytes = read(fd, &nextFreeDataBlockIndex, sizeof(int));
+        errCheck(fd, readBytes, 7, "Error while reading index of next data block in initDataBlocks");
 
         if(nextFreeDataBlockIndex != i + 1 && i < sb.numberOfFreeDataBlocks - 1) {
-            errx(11, "Datablock initilization failed");
+            close(fd);
+            errx(12, "Datablock initilization failed");
         }
 
         if(nextFreeDataBlockIndex != -1 && i == sb.numberOfFreeDataBlocks - 1) {
-            errx(11, "Datablock initilization failed lastIndex");
+            close(fd);
+            errx(12, "Datablock initilization failed lastIndex");
         }
 
         mySeek(fd, sb.data_block_size - sizeof(int), SEEK_CUR,
@@ -399,10 +417,38 @@ void validateDataBlocks(int fd, Superblock sb) {
     write(1, "Successful data block initialization!\n", 38);
 }
 
-void printDataBlock(Superblock * sb) {
+//Calculates how many numbers an int has
+int intLenght(long n) {
+    int i = 0;
+
+    while(n > 0) {
+        i++;
+        n /= 10;
+    }
+    
+    return i;
+}
+
+char * intToString(long n) {
+    int numberCount = intLenght(n);
+    int i = numberCount - 1;
+    char * res = malloc(numberCount + 1);
+
+    while(n > 0) {
+        res[i] = n % 10 + '0';
+        n /= 10;
+        i--;
+    }
+    
+    res[numberCount] = '\0';
+
+    return res;
+}
+
+void printSuperblock(Superblock * sb) {
     printf("%ld\n", sb->dataBlockSpace);
-    printf("%d\n", sb->data_block_size);
-    printf("%d\n", sb->inodeSize);
+    printf("%ld\n", sb->data_block_size);
+    printf("%ld\n", sb->inodeSize);
     printf("%d\n", sb->inodesPerDatablock);
     printf("%d\n", sb->checksum);
     printf("%ld\n", sb->inodeSpace);
@@ -410,21 +456,60 @@ void printDataBlock(Superblock * sb) {
     printf("%d\n", sb->numberOfFreeDataBlocks);
     printf("freeData: %d\n", sb->firstFreeDataBlock);
     printf("freeInode: %d\n", sb->firstFreeInode);
-    printf("fsSize: %d\n", sb->filesystemSize);
-    printf("sbSize: %d\n", sb->size);
+    printf("fsSize: %ld\n", sb->filesystemSize);
+    printf("sbSize: %ld\n", sb->size);
 }
 
-bool validateSuperblockInodeCount(int fd, Superblock * sb) {
-    int inodeCounter = 0;
-    int currInodeId = sb->firstFreeInode;   
+bool validateSuperblockInodeCount(int fd, Superblock sb) {
+    uint32_t inodeCounter = 0;
+    uint32_t currInodeId = sb.firstFreeInode;   
     Inode inode;
 
     while(currInodeId != -1) {
-
+        inode = readInodeById(fd, sb, currInodeId);
+        currInodeId = inode.nextFreeInode;
         inodeCounter++;
     }
 
-    return inodeCounter == sb->numberOfFreeInodes;
+    return inodeCounter != sb.numberOfFreeInodes;
+}
+
+bool validateSuperbockDataBlockCount(int fd, Superblock sb) {
+    uint32_t dbCounter = 0;
+    int currDbId = sb.firstFreeDataBlock;   
+    
+    mySeek(fd, sb.data_block_size + sb.inodeSpace, SEEK_SET, 
+           "Error seeking at start of free data block count validation");
+
+    while(currDbId != -1) {
+        int readBytes = read(fd, &currDbId, sizeof(int));
+        errCheck(fd, readBytes, 6, "Could not read datablock during datablockCount validation");
+
+        mySeek(fd, sb.data_block_size - sizeof(int), SEEK_CUR, "Error seeking during dataBock validation");
+        dbCounter++;
+    }
+
+    return dbCounter != sb.numberOfFreeDataBlocks;
+}
+
+void validateSuperbock(int fd, Superblock sb) {
+    uint16_t readChecksum = sb.checksum;
+    sb.checksum = 0;
+
+    if(Fletcher16Checksum((uint8_t*)& sb, sizeof(Superblock)) != readChecksum) {
+        close(fd);
+        errx(10, "Corrupted Superblock");
+    }
+
+    if(validateSuperblockInodeCount(fd, sb)) {
+        close(fd);
+        errx(10, "Corrupted Superblock! Invalid free inode count");
+    }
+
+    if(validateSuperbockDataBlockCount(fd, sb)) {
+        close(fd);
+        errx(10, "Corrupted Superblock! Invalid free data block count");
+    }
 }
 
 void validateInodeChecksums(int fd, Superblock sb) {
@@ -444,24 +529,273 @@ void validateInodeChecksums(int fd, Superblock sb) {
     }
 }
 
-void validateSuperbock(Superblock sb) {
-    uint16_t readChecksum = sb.checksum;
-    sb.checksum = 0;
-
-    if(Fletcher16Checksum((uint8_t*)& sb, sizeof(Superblock)) != readChecksum) {
-        errx(10, "Corrupted Superblock");
-    }
-}
-
 void fsck(const char * fileName) {
     int fd = myOpen(fileName, O_RDONLY);
     Superblock sb;
-    readSuperblock(fd, &sb, "Superblock could not be read during fsck");
-    validateSuperbock(sb);
+    readSuperblock(fd, &sb);
+    validateSuperbock(fd, sb);
     validateInodeChecksums(fd, sb);
 
-
     print(1, "File system is operational!\n");
+}
+
+void printWhitespaces(int num) {
+    for (int i = 0; i < num; ++i) {
+        print(1, " ");
+    }
+}
+
+int printNumber(const char * msg, long n) {
+    char * numArr = intToString(n);
+    print(1, msg);
+    print(1, numArr);
+    int numLen = strlen(numArr);
+    free(numArr);
+    return numLen + strlen(msg);
+}
+
+void debug(const char * fileName) {
+    int fd = myOpen(fileName, O_RDWR);
+    //I have a starting offset and from it I remove the size of the text
+    //I printed in the last command
+    int lastPrintOffset;
+    int startingOffset = 30;
+    Superblock sb; 
+    readSuperblock(fd, &sb);
+    
+    printWhitespaces(20);
+    print(1, "This is the structure of BDSM_FS\n");
+    print(1, "\n");
+
+    //The starting whitespaces are to even out the :
+    printWhitespaces(2);
+    printNumber("File system size: ", sb.filesystemSize);
+    print(1, "\n");
+
+    printWhitespaces(2);
+    lastPrintOffset = printNumber("Superblock  size: ", sb.size);
+    //-2 is to take into account the above whitespaces. 
+    //+8 to even out with the hardcoded message. Same below
+    printWhitespaces(startingOffset - lastPrintOffset - 2 + 8);
+    printNumber("Data block size: ", sb.data_block_size);
+    printWhitespaces(6);
+    printNumber("Inode size: ", sb.inodeSize);
+    print(1, "\n");
+
+    printWhitespaces(2);
+    lastPrintOffset = printNumber("Number of inodes: ", sb.numberOfInodes);
+    printWhitespaces(startingOffset - lastPrintOffset - 2 + 2);
+    printNumber("Number of data blocks: ", sb.numberOfDataBlocks);
+    print(1, "\n");
+
+    printWhitespaces(7);
+    lastPrintOffset = printNumber("Free inodes: ", sb.numberOfFreeInodes);
+    printWhitespaces(startingOffset - lastPrintOffset - 7 + 7);
+    printNumber("Free data blocks: ", sb.numberOfFreeDataBlocks);
+    print(1, "\n");
+
+    lastPrintOffset = printNumber("Inode space(bytes): ", sb.inodeSpace); 
+    printWhitespaces(startingOffset - lastPrintOffset);
+    printNumber("Data block space(bytes): ", sb.dataBlockSpace); 
+    print(1, "\n");
+}
+
+char * readWordFromPath(const char * path) {
+    //This can be optimized to use less memory
+    //But this seemed simpler. The directory name
+    //can't be longer than the path
+    char * word = malloc(strlen(path) + 1);
+
+    int i = 0;
+    while(path[0] != '/' && path[0] != '\0') {
+        word[i] = path[0]; 
+        i++;
+        path++;
+    }
+    
+    word[i] = '\0';
+    
+    return word;
+}
+
+void seekDatablockById(int fd, Superblock sb, int dbId) {
+    uint32_t startOffset = sb.data_block_size + sb.inodeSpace;
+    mySeek(fd, startOffset + dbId * sb.data_block_size, SEEK_SET, 
+            "Failed to seek datablock in getNextFreeDatablock");
+}
+
+uint32_t getNextFreeDatablock(int fd, Superblock sb) {
+    int nextFreeDataBlockIndex;
+
+    seekDatablockById(fd, sb, sb.firstFreeDataBlock);
+    int readBytes = read(fd, &nextFreeDataBlockIndex, sizeof(int));
+    errCheck(fd, readBytes, 6, "Error reading nextFreeDataBlockIndex");
+
+    return nextFreeDataBlockIndex;
+}
+
+void delegateNewDataBlocksToInode(int fd, Superblock * sb, Inode * inode, uint64_t requiredSpace) {
+    int requiredDataBlocks = requiredSpace / 512; 
+    
+    if(requiredSpace % 512 != 0) {
+        requiredDataBlocks++;
+    }
+
+    int index = 0;
+    //Index is less than 10 for the base data blocks
+    while(index < 10 && requiredDataBlocks > 0) {
+        if(sb->firstFreeDataBlock == -1) {
+            close(fd);
+            errx(14, "Not enough space / data blocks");
+        }
+
+        if(inode->dataBlocks[index] == -1) {
+            inode->dataBlocks[index] = sb->firstFreeDataBlock;
+            sb->firstFreeDataBlock = getNextFreeDatablock(fd, *sb);
+            sb->numberOfFreeDataBlocks--;
+        }
+
+        index++;
+    }
+
+    //while(requiredDataBlocks > 0) {
+       //TODO: add implementation for files and double and triple pointers 
+    //}
+}
+
+void addDirToDirTable(int fd, Superblock * sb, Inode * parentInode, const char * newDirName) {
+    Inode newDirInode = inodeConstr('d', 0, 0, 755, time(NULL));
+    delegateInode(fd, sb, &newDirInode);
+    DirTableRow newRow = dirTableRowConstr(newDirInode.id, newDirName);
+    int datablockToWrite = parentInode->fileSize / sb->data_block_size;
+    int dbOffset = parentInode->fileSize % sb->data_block_size;
+    bool noDbInode = (parentInode->dataBlocks[0] == -1);
+    if( noDbInode || (parentInode->fileSize % sb->data_block_size + sizeof(newRow)) > sb->data_block_size) {
+        delegateNewDataBlocksToInode(fd, sb, parentInode, sb->data_block_size);
+        datablockToWrite += !noDbInode ;
+        dbOffset = 0;
+    }
+
+
+    //TODO: Add validation for two files with the same name
+    //TODO: fix this your choice of datablock is invalid  
+    int pos = 0; 
+    if(datablockToWrite < 10) { 
+        printf("Here %d\n", parentInode->dataBlocks[datablockToWrite]);
+        seekDatablockById(fd, *sb, parentInode->dataBlocks[datablockToWrite]);
+        pos = mySeek(fd, dbOffset, SEEK_CUR,
+              "Failed to seek when adding directory to parent file");
+        printf("Position of write: %d\n", pos);
+    } else {
+        //TODO: Implement for files
+    }
+
+    printf("Position of write: %d\n", pos);
+
+    int writtenBytes = write(fd, &newRow, sizeof(DirTableRow));
+    errCheck(fd, writtenBytes, 7, "Error writing new file to directory table");
+    parentInode->fileSize += writtenBytes;
+    
+    printf("Inode file size: %ld\n", parentInode->fileSize);
+    writeInode(fd, *sb, *parentInode);
+    writeSuperblock(fd, *sb);
+}
+
+void myMkdir(const char * fileName, const char * path) {
+    int fd = myOpen(fileName, O_RDWR);
+    Superblock sb;
+    readSuperblock(fd, &sb);
+    Inode inode = readInodeById(fd, sb, 0);
+
+    if(path[0] != '+' || path[1] != '/') {
+        errx(13, "Invalid path. Please enter the full path! Root directory is missing");
+    }
+    
+    path += 2;
+    char * word;
+    word = readWordFromPath(path);
+    addDirToDirTable(fd, &sb, &inode, word); 
+    //while(path[0] != '\0') {
+    //    word = readWordFromPath(path);
+    //    path += strlen(word);
+    //    
+    //    if(path[0] != '\0') {
+    //        free(word);
+    //        path++;
+    //    } 
+    //}
+
+    free(word);
+}
+
+Inode findInodeInFile(int fd, Superblock sb, Inode parentInode, const char * tableRowFileName) {
+    uint64_t readSum = 0;
+    DirTableRow dirTableRow;
+    Inode resInode;
+    resInode.id = -1;
+    int inodeIndex = 1;
+    seekDatablockById(fd, sb, parentInode.dataBlocks[0]);
+
+    while(readSum < parentInode.fileSize && resInode.id == -1) {
+        //Adds the offset
+        if(readSum % sb.data_block_size + sizeof(DirTableRow) > sb.data_block_size) {
+            seekDatablockById(fd, sb, parentInode.dataBlocks[inodeIndex++]);
+        }
+
+        int readBytes = read(fd, &dirTableRow, sizeof(DirTableRow));
+        errCheck(fd, readBytes, 6, "Error searching for file");
+        readSum += readBytes;
+        printf("%s\n", dirTableRow.fileName);
+
+        if(strcmp(dirTableRow.fileName, tableRowFileName) == 0) {
+            resInode = readInodeById(fd, sb, dirTableRow.inodeId);
+        }
+    }
+
+    return resInode;
+}
+
+void lsobj(const char * fileName, const char * path) {
+    int fd = myOpen(fileName, O_RDWR);
+    Superblock sb;
+    readSuperblock(fd, &sb);
+    Inode currDirInode = readInodeById(fd, sb, 0);
+
+    if(path[0] != '+' || path[1] != '/') {
+        errx(13, "Invalid path. Please enter the full path! Root directory is missing");
+    }
+
+    path += 2;
+    
+    char * searchedFileName = readWordFromPath(path);
+    
+    Inode resInode = findInodeInFile(fd, sb, currDirInode, searchedFileName);
+    
+    free(searchedFileName);
+
+    if(resInode.id != -1) {
+        printInode(resInode);
+    } else {
+        close(fd);
+        errx(15, "File not found");
+    }
+}
+
+void firstFileTest(const char * fileName) {
+    int fd = myOpen(fileName, O_RDWR);
+    Superblock sb;
+    readSuperblock(fd, &sb);
+    Inode inode = readInodeById(fd, sb, 0);
+    DirTableRow dirTableRow;
+    printf("Reserved db: %d\n", inode.dataBlocks[0]);
+    if(inode.dataBlocks[0] != -1) {
+        seekDatablockById(fd, sb, inode.dataBlocks[0]);
+        int pos = lseek(fd, 0, SEEK_CUR);
+        printf("pos: %d\nShould be: %ld\n", pos, 512 + sb.inodeSpace);
+        int readBytes = read(fd, &dirTableRow, sizeof(DirTableRow));
+        errCheck(fd, readBytes, 6, "Error searching for file");
+        printf("%s\n", dirTableRow.fileName);
+    }
 }
 
 void mkfs(const char * fileName) {
@@ -487,8 +821,8 @@ void mkfs(const char * fileName) {
     initDataBlocks(fd, sb);
     validateInodes(fd, sb);
     validateDataBlocks(fd, sb);
-    Inode i = inodeConstr(0, 'd', 0, 0, 755, time(NULL));
-    writeInode(i, &sb, fd);
+    Inode i = inodeConstr('d', 0, 0, 755, time(NULL));
+    delegateInode(fd, &sb, &i);
     sb.checksum = Fletcher16Checksum((uint8_t*)& sb, sizeof(Superblock));
 
     mySeek(fd, 0, SEEK_SET, "Error seeking to start of file in mkfs");
@@ -517,7 +851,19 @@ int main(int argc, char * argv[]) {
     } else if(strcmp(argv[1], "fsck") == 0) {
         fsck(fileName);
     } else if(strcmp(argv[1], "debug") == 0) {
+        debug(fileName);
+    } else if(strcmp(argv[1], "mkdir") == 0) {
+        if(argc < 3) {
+            errx(1, "Not enough arguments");
+        }
 
+        myMkdir(fileName, argv[2]);
+    } else if(strcmp(argv[1], "lsobj") == 0) {
+        if(argc < 3) {
+            errx(1, "Not enough arguments");
+        }
+        //firstFileTest(fileName);
+        lsobj(fileName, argv[2]);
     }
 
 	return 0;

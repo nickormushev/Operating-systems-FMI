@@ -1,6 +1,7 @@
 Error codes:
 1)Not enough argument 2)Open file error 3)pipe error 4)dup2 error 5)exec error 6) read error 7) write error 
-8)No more inodes 9) lseek error 10) Corrupted superblock
+8)No more inodes 9) lseek error 10) Corrupted superblock 11) Corrupted inode 12) Failed datablock initialization
+13) Invalid path 14) Not enough data blocks 15) File not found
 
 Day 1: Started by reareading the problem.txt a few time. Found out I did not understand all of it at
 first.  I was expecting to have to access the memory directly in some way so I could write my files
@@ -131,25 +132,44 @@ pointless. Then I googled believing that there needs to be a way to treat the st
 of bytes and sure enough there was. This is really smart and gave me a new appreciation of pointers.
 Found this stack overflow page:
 https://stackoverflow.com/questions/484357/trying-to-copy-struct-members-to-byte-array-in-c which
-pointed out that I could just get the address of the structure in memory and convert it to a 
-uint8_t *byteArray. I could not believe I could do something like that which is so logical and
-fascinating. As I said pointers are awesome!!!! Now I could use the Fletcher checksum algorithm.
+pointed out that I could just get the address of the structure in memory and convert it to a uint8_t
+*byteArray. I could not believe I could do something like that which is so logical and fascinating.
+As I said pointers are awesome!!!! Now I could use the Fletcher checksum algorithm.
 
-I met with another issue! Calculating the value of the checksum lead to me changing the superblock and inode
-data so when I calculte it a second the the result would be different. I remembered I saw some checkbytes 
-in the wikipedia article for the checksum. They were made so on recalculation of the sum the checksum would
-give 0x00 as an answer and this looks like the right solution for me.
+I met with another issue! Calculating the value of the checksum lead to me changing the superblock
+and inode data so when I calculte it a second the the result would be different. I remembered I saw
+some checkbytes in the wikipedia article for the checksum. They were made so on recalculation of the
+sum the checksum would give 0x00 as an answer and this looks like the right solution for me.
 
-The above idea failed. The algorithm did not output 0x00 and i decided just to make the checksum value equal
-zero temporarily so the value calculated is the same. Seemed simpler.
+The above idea failed. The algorithm did not output 0x00 and i decided just to make the checksum
+value equal zero temporarily so the value calculated is the same. Seemed simpler.
 
-I tried to do the same for the Inodes but that did not work because they have a pointer(the array) which
-initialized with a different value every time I ran the program. I could use memcopy and write the data to an array of
-uint8_t bytes but since we haven't studied it i decided against that. If I have time I might revisit and fix this.
-I do not know if this idea is a good one aswell cause I would not be validating the files that contain id's aswell.
-Need to write a custom function that does that. I will try to add it later as i said.
+The last idea I have for fsck is to check if the amount of free Inodes is equal to the amount
+specified in the superblock Same could be done for the datablocks. I can just walk through the
+inodes and datablocks and see if the numbers match.  I believe that fsck has the idea of validating
+the structure of the file system and not all files. So I will not be looking at data blocks.
 
-The last idea I have for fsck is to check if the amount of free Inodes is equal to the amount specified in the superblock
-Same could be done for the datablocks. I can just walk through the inodes and datablocks and see if the numbers match.
-I believe that fsck has the idea of validating the structure of the file system and not all files. So I will not be looking at
-data blocks.
+Day 7: Fixed up the fsck command by making the above mentioned validations. I started looking at the
+next command in the list which is debug. The problem.txt files says that we need to print the
+appropriate metadata that describes the structures in the file system. For this I decided to print
+the information in the superblock because the information of every inode seems a bit too much.
+This task is a bit annoying but i tried to make the output look as best I could considering my knowledge.
+Might be cool to center the header but that requires knowledge of the longest line before I print it.
+I am unsure how to achieve this at the moment except to just calculate line lenghts before printing which
+seemed a bit overkill.
+
+Day 8: Going down the list onto the next commands and I saw lsobj and lsdir which are cool and all but
+I don't have that many objects nor directories for me to test it on so I decided to implement at least mkdir
+first. Here I will use the that idea Angel gave me. My directories will simulate a table. They will be a 
+pair of a inode of the file in the first column and a name in the second. If the name is too long I will
+store it in a file and in it's place there will be the text inode: <num>.
+
+As of now every directory is created with uid and gid for the root user and group ids(0,0). Need to think if I
+want to change that.
+
+Realise numberOfFreeInodes and datablocks are unneeded. Maybe keep them just for more information of the state
+of the fileSystem. Actually I can just count them? Need to decide if I should remove them altogether.
+
+Finally managed to create my first directory called test. I am slowly progressing but finally I feel like I have
+a the whole idea of how my filesystem should work. The only big problems left to solve are to make memory delegation
+work with files. Basically hava a datablock to store more datablock indices.
