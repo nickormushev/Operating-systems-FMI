@@ -1,7 +1,7 @@
 Error codes:
 1)Not enough argument 2)Open file error 3)pipe error 4)dup2 error 5)exec error 6) read error 7) write error 
 8)No more inodes 9) lseek error 10) Corrupted superblock 11) Corrupted inode 12) Failed datablock initialization
-13) Invalid path 14) Not enough data blocks 15) File not found
+13) Invalid path 14) Not enough data blocks 15) File not found 16) Trying to lsdir a file 17) File or directory name taken 
 
 Day 1: Started by reareading the problem.txt a few time. Found out I did not understand all of it at
 first.  I was expecting to have to access the memory directly in some way so I could write my files
@@ -20,7 +20,7 @@ can be larger but that would lead to greater wastage of memory if I am storing s
 small blocks lead to more metadata to keep track of but for now this looks like the easier route.
 
 Late at night the same day: I found this link as a resource from the wikipedia page on inodes:
-http://www.linfo.org/inode.html . After reading I found out that the typical heuristic for a file
+http://www.linfo.org/inode.html. After reading I found out that the typical heuristic for a file
 system is to have one inode per 2K bytes. Will implement tommorow!  An inode without the name is 20
 bytes. Let's make it 30 for the name even though it can be longer. We have 16777 inodes for 32 MB of
 starage. 
@@ -173,3 +173,7 @@ of the fileSystem. Actually I can just count them? Need to decide if I should re
 Finally managed to create my first directory called test. I am slowly progressing but finally I feel like I have
 a the whole idea of how my filesystem should work. The only big problems left to solve are to make memory delegation
 work with files. Basically hava a datablock to store more datablock indices.
+
+Day 9: Managed to fix the printing of the lsobj command so that the output resembles the output of the actual ls -l
+command. Also created the base for the lsdir command which still needs some polishing. Have reapeated code and need to
+put it in a function. It was late so a quick copy seemed easier for testing purposes
