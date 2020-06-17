@@ -103,7 +103,7 @@ function country {
         #If that is not the case I want to see if we have a foreign country so I fgrep for a \
         if [ ! -n "$(echo ${resCountry} | grep "=${1}")" ] && echo "${1}" | fgrep '/' &>/dev/null
         then
-            #I reverse the data and take the last column for the foreign country incase I have data like this R9JBN/4/M
+            #I reverse the data and take the last column for the foreign country in case I have data like this R9JBN/4/M
             #where R9JBN/4 is an exact match and M is the foreign country
             foreignCountryID=$(echo "${1}" | rev | cut -d '/' -f 1 | rev)
             foreignCountry=$(search "${foreignCountryID}" | cut -d ',' -f 2)
@@ -223,6 +223,7 @@ function distance {
     #Calculates the distance between the points
     res=$(echo "${angle} * ${rad}" | bc -l)
     
+    #Rounds the answer up or down
     if [ $(echo ${res} | cut -d '.' -f 2 | cut -c 1) -ge 5 ]
     then
         echo "$(echo "${res}" | cut -d '.' -f 1) + 1" | bc -l

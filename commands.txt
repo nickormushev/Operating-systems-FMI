@@ -34,8 +34,9 @@ find <directory/starting point> -name '<match pattern>'[-user <username>] [-prin
                     it prints it.  Printf changes output format. -exec executes a command on all the files find finds. No guarantee of order of
                     result.-print0 - hexadecimal zero as separator. No new lines. -ls - prints output like ls. -inum - search by inode number
 
-tr [-s] <sym1> [<sym2>] - replaces sym 1 in string with sym 2. -s replaces 5 of the same symbol with one. Example traaaa -> tra. No sym2 for -s
-                          tr ao bd - replaces a with b and o with d. tr does not work on files. -s means squeeze. Needs a pipe
+tr [-s] [-d] <sym1> [<sym2>] - replaces sym 1 in string with sym 2. -s replaces 5 of the same symbol with one. Example traaaa -> tra. 
+                          No sym2 for -s tr ao bd - replaces a with b and o with d. tr does not work on files. -s means squeeze. Needs a pipe.
+                          -d is for delete
 
 uniq [-c] - if two rows match it leaves only one. The rows must come one after another. -c is for number of occurences
 
@@ -72,11 +73,13 @@ tar [-c] [-x] [-v] [-t] [-v] [-a] [-J] - v shows the names of files added or ext
 
 xz [-d] - for compression. -d is for decompression. You can compress a non tar file directly
 
-ps [-e] [-f] [-u <user>] [-o format] [a] [x] [-l] - processses only for user is with -u. 
+ps [-e] [-f] [-u <user>] [-o format] [a] [u] [x] [-l] - processses only for user is with -u. 
                                        -e is see all processes? -o user pid will display only user and pid from ps. pid=process changes the name
                                        pid= gives the column without the header. -f displays arguments/flags given to command. [a] removes
-                                       BSD format restrictien for self non [-flag] arguments are acceptde. [x] is like a but for all users.
-                                       Has a column that shows if a process is stopped S, running R, terminated T? You need -l flag for this
+                                       BSD format restrictien for self non [-flag] arguments are acceptde. 
+                                       Lists all processes attached to a terminal. [x] lists detached processes. [ax] - list all processes
+                                       [u] shows the process owner. Has a column that shows if a process is stopped S, running R, terminated T?
+                                       You need -l flag for this
 
 top - you know it
 htop - colored top
@@ -101,12 +104,14 @@ bg <num> - starts a stopped job in background. If you start an interactive progr
 
 chsh - change shell and stop bash
 
-source <scriptname> - like ./<scriptname> but more readable. It executes commands in current shell not in a subshell like ./ or bash <scriptname>
+source <scriptname> - It executes commands in current shell not in a subshell like ./ or bash <scriptname>
+
+bash -x - gives information about executed commands from shell
 
 set - shows all variables. Can be used inside script to change variables
 unset - removes a variable
 env - prints environment variables. Inherited by children
-printenv - Like the command above.
+printenv - The same as env.
 
 exit <status number> - used in shell script to stop the script with the exit status. You must explain in documentation what the status means
                        0 is always success. By default scripts exit with the exit status of the last command.
@@ -122,11 +127,11 @@ comm <file 1> <file 2> - prints lines unique to line 1, to line 2 and the ones t
 
 seq <from> [<increment>] <to> - creates the sequence of numbers from to to and by what to increment. For example seq 1 2 6 ->  1 3 5
 
-msg y [n] - enable messaging to your terminal. n is for disable
+mesg y [n] - enable messaging to your terminal. n is for disable. No arguments tells you if it is enabled or not
 
 <cmd> | wall - the first symbol is a pipe. writes to everybody
 
-<cmd> | write <username> - writes to a concrete user
+<cmd> | write <username> [<tty>]- writes to a concrete user. You can optionally specify a tty interface/console
 
 shift - shifts arguments to the left
 
@@ -149,11 +154,21 @@ sha256sum - use sha 256 and up and not md5 sum
 
 ldd <file> - shows libs used by c file
 
+expr [<arithmetics>] [index <string> <chars>] [length <string>] [substr <string> <start position> <length>]
+                                - prints out math equations. index lists the position of the first charecter in chars found in string. 
+
 &> - both std in to std out
 2>&1 - std::err to std::out
 
 /usr/share/file/magic.mgc - database with popular file types maybe. Look it up
 
+users - prints only the accounts of logged users
+
+w - shows information for logged in users and what they are doing at the momen
+
+wall - writes a message to everyone
+
+finger [username] - lists information for a user. Without username lists information for all users
 
 Examples: Command to get the port of tcp in /etc/services: 
        1) cat /etc/services | grep "^ftp\s" | tr -s ' ' | cut -d ' ' -f 2 | cut -d '/' -f 1  
