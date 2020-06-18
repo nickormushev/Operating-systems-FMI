@@ -27,6 +27,7 @@ typedef struct {
     int dataBlocks[10];
     int doubleReferenceDataBlock;
     int trippleReferenceDataBlock;
+    int blockCount;
     time_t modificationTime;
     uint16_t checksum;
 } Inode;
@@ -88,6 +89,7 @@ Inode inodeConstr(char fileType, uint16_t uid, uint16_t gid, const char permissi
     i.fileSize = 0;
     i.checksum = 0;
     i.reserved = 0;
+    i.blockCount = 0;
 
     for (int j = 0; j < 10; ++j) {
         i.dataBlocks[j] = -1;
@@ -185,6 +187,7 @@ int myOpen(const char * fileName, int mode) {
 }
 
 
+
 uint64_t mySeek(int fd, uint64_t offset, int mode, const char * errMsg) {
     off_t pos;
     pos = lseek(fd, offset, mode);
@@ -239,6 +242,30 @@ void readNextInode(int fd, Inode * inode, int i, Superblock sb) {
 
     int readValue = read(fd, inode, sizeof(Inode));
     errCheck(fd, readValue, 6, "Read of inode failed");
+}
+
+void seekDoubleReferenceInode(int fd, Superblock sb, int * currDbId, int doubleReferenceDataBlock) {
+    seekDatablockById(fd, sb, doubleReferenceDataBlock);
+    mySeek(fd, ((*currDbId) - 10) * sizeof(int), SEEK_CUR, 
+            "Error seeking in doubleReferenceDataBlock findInodeInFile");
+
+    int dbId;
+    int curReadBytes = read(fd, &dbId, sizeof(int));
+    errCheck(fd, curReadBytes, 6, "Error reading doubleReferenceDataBlock in findInodeInFile");
+    seekDatablockById(fd, sb, dbId);
+    (*currDbId)++;
+}
+
+void checkOffset(int fd, Superblock sb, int * dbIndex, int readSum, Inode parentInode) {
+    int numberOfIntsInDb = sb.data_block_size / sizeof(int);
+    bool addOffset = (readSum % sb.data_block_size + sizeof(DirTableRow) > sb.data_block_size 
+                    || (readSum % sb.data_block_size == 0 && readSum != 0));
+
+    if((*dbIndex) < 10 && addOffset) {
+        seekDatablockById(fd, sb, parentInode.dataBlocks[(*dbIndex)++]);
+    } else if(addOffset && numberOfIntsInDb > (*dbIndex) - 10) {
+        seekDoubleReferenceInode(fd, sb, dbIndex, parentInode.doubleReferenceDataBlock); 
+    }
 }
 
 void initDataBlocks(int fd, Superblock sb) {
@@ -364,6 +391,7 @@ void printInode(Inode i, const char * fileName) {
     } else {
         print(1, "+/");
     }
+
     print(1, "\n");
 }
 
@@ -553,8 +581,6 @@ void validateDataBlocks(int fd, Superblock sb) {
     write(1, "Successful data block initialization!\n", 38);
 }
 
-
-
 void printSuperblock(Superblock * sb) {
     printf("%ld\n", sb->dataBlockSpace);
     printf("%ld\n", sb->data_block_size);
@@ -594,7 +620,7 @@ bool validateSuperblockDataBlockCount(int fd, Superblock sb) {
         int readBytes = read(fd, &currDbId, sizeof(int));
         errCheck(fd, readBytes, 6, "Could not read datablock during datablockCount validation");
 
-        mySeek(fd, sb.data_block_size - sizeof(int), SEEK_CUR, "Error seeking during dataBock validation");
+        seekDatablockById(fd, sb, currDbId);
         dbCounter++;
     }
 
@@ -647,8 +673,6 @@ void fsck(const char * fileName) {
 
     print(1, "File system is operational!\n");
 }
-
-
 
 void debug(const char * fileName) {
     int fd = myOpen(fileName, O_RDWR);
@@ -731,9 +755,6 @@ void updateFreeDatablocks(int fd, Superblock * sb, int * inodeDb, int * required
         errx(14, "Not enough space or data blocks");
     } 
 
-    printf("HEEERER\n");
-    printf("Delegating db: %d\n", sb->firstFreeDataBlock);
-    printf("Free dbs: %d\n", sb->numberOfFreeDataBlocks);
     *inodeDb = sb->firstFreeDataBlock;
     int currOffset = mySeek(fd, 0, SEEK_CUR, 
             "Error getting currentOffset in updateFreeDatablocks");
@@ -744,65 +765,11 @@ void updateFreeDatablocks(int fd, Superblock * sb, int * inodeDb, int * required
     (*requiredDataBlocks)--;
 }
 
-
-int calculateNumberOfDatablocks(Inode inode, Superblock sb) {
-    //Removes the ten datablocks from the start
-    long size = inode.fileSize - 10 * sb.data_block_size;
-    int counter = 0;
-    while(size > 0) {
-        size -= sb.data_block_size;
-        counter++;
-    }
-
-    return counter;
-}
-
-//Initializes all datablock id's in a reference datablock to -1
-//I used this because with triple reference datablocks it seemed really hard or a lot of math
-//to find out how many datablocks I have written and in which datablock I need to write.
-//Probably is less effective though
-void initReferenceDataBlocks(int fd, Superblock sb, uint32_t datablockId) {
-    seekDatablockById(fd, sb, datablockId);
-
-    int currWrittenBytes;
-    int writtenBytesSum = 0;
-    const int value = -1;
-
-    while(writtenBytesSum < sb.data_block_size && writtenBytesSum + sizeof(int) < sb.data_block_size) {
-        currWrittenBytes = write(fd, &value, sizeof(int));
-        errCheck(fd, currWrittenBytes, 7, 
-                "Error writing to a newly delegated reference data block");
-        writtenBytesSum += currWrittenBytes;
-    }
-}
-
-//seeks to the first datablock with an id different from -1
-int readUntilEndOfDatablocks(int fd, Superblock sb, int referenceDataBlock) {
-    int readBytesSum = 0;
-    int readBytes;
-    int currInodeId = 0;
-
-    seekDatablockById(fd, sb, referenceDataBlock); 
-    while(readBytesSum + sizeof(int) < sb.data_block_size && currInodeId != -1) {
-        printf("Next free db: %d\n", sb.firstFreeDataBlock);
-        printf("readAndWrittenBytesSum: %d\n", readBytesSum);
-        readBytes = read(fd, &currInodeId, sizeof(int));
-        errCheck(fd, readBytes, 6, "Error reading from doubleReferenceDataBlock");
-        readBytesSum += readBytes;
-    }
-
-    if(currInodeId == -1) { 
-        mySeek(fd, -sizeof(int), SEEK_CUR, "Error seeking backwards in doubleReferenceDataBlock");
-    }
-
-    return readBytesSum;
-}
-
 void delegateToDoubleReferenceDataBlock(int fd, Superblock * sb, Inode * inode, int * requiredDataBlocks, int firstDataBlockToDelegate) {
     if(inode->doubleReferenceDataBlock == -1) {
         updateFreeDatablocks(fd, sb, &inode->doubleReferenceDataBlock, requiredDataBlocks);
+        inode->blockCount++;
         (*requiredDataBlocks)++;//to offset the reduction from updateFreeDatablocks
-        printf("doubleReferenceDataBlock delegated value %d\n", inode->doubleReferenceDataBlock);
     }
 
     int newlyDelegatedDb = 0;
@@ -810,21 +777,14 @@ void delegateToDoubleReferenceDataBlock(int fd, Superblock * sb, Inode * inode, 
     int writtenBytes;
 
     seekDatablockById(fd, *sb, inode->doubleReferenceDataBlock);
-    int pos = lseek(fd, 0, SEEK_CUR);
-    printf("pos is %d\n", pos);
-    pos = mySeek(fd, firstDataBlockToDelegate * sizeof(int), SEEK_CUR, "Error seeking to firstDataBlockToDelegate");
-    printf("pos is pos 2 %d\n", pos);
+    mySeek(fd, firstDataBlockToDelegate * sizeof(int), SEEK_CUR, "Error seeking to firstDataBlockToDelegate");
 
     while(*requiredDataBlocks > 0 && writtenBytesSum + sizeof(int) < sb->data_block_size) {
         updateFreeDatablocks(fd, sb, &newlyDelegatedDb, requiredDataBlocks);
-        printf("\nnewlyDelegatedDb delegated value %d\n", newlyDelegatedDb);
-        pos = lseek(fd, 0, SEEK_CUR);
-        printf("pos is pos 2.5 before %d\n", pos);
         writtenBytes = write(fd, &newlyDelegatedDb, sizeof(int));
-        pos = lseek(fd, 0, SEEK_CUR);
-        printf("pos is pos 2.6 after %d\n", pos);
         errCheck(fd, writtenBytes , 7, "Error writing a new datablockId to doubleReferenceDataBlock");
         writtenBytesSum += writtenBytes;
+        inode->blockCount++;
     }
 }
 
@@ -833,7 +793,6 @@ void delegateToTripleReferenceDataBlock(int fd, Superblock * sb, Inode * inode, 
     //TODO: add implementation for files and double and triple pointers
     if(*requiredDataBlocks > 0 && inode->trippleReferenceDataBlock == -1) {
         updateFreeDatablocks(fd, sb, &inode->trippleReferenceDataBlock, requiredDataBlocks);
-        initReferenceDataBlocks(fd, *sb, inode->trippleReferenceDataBlock);
     }
 
     while(*requiredDataBlocks > 0) {
@@ -853,20 +812,13 @@ void delegateDataBlocksToInode(int fd, Superblock * sb, Inode * inode, uint64_t 
     //Index is less than 10 for the base data blocks
     while(index < 10 && requiredDataBlocks > 0) {
         updateFreeDatablocks(fd, sb, &inode->dataBlocks[index++], &requiredDataBlocks);
+        inode->blockCount++;
     }
 
     if(requiredDataBlocks > 0 && index - 10 < dbIdsPerDataBlock) {
         delegateToDoubleReferenceDataBlock(fd, sb, inode, &requiredDataBlocks, index - 10);
     }
 
-    if(inode->doubleReferenceDataBlock != -1) {
-        int dbCount = calculateNumberOfDatablocks(*inode, *sb);
-        seekDatablockById(fd, *sb, inode->doubleReferenceDataBlock);
-        mySeek(fd, dbCount * sizeof(DirTableRow), SEEK_CUR,
-                "Failed to seek end of doubleReferenceDataBlock");
-    }
-
-    //delegateToDoubleReferenceDataBlock(fd, sb, inode, &requiredDataBlocks);
     printf("Dbs Delegated: %d\n", sb->firstFreeDataBlock);
 
     if(requiredDataBlocks > 0) {
@@ -880,28 +832,12 @@ Inode findInodeInFile(int fd, Superblock sb, Inode parentInode, const char * tab
     Inode resInode;
     resInode.id = -1;
     int dbIndex = 1;
-    bool addOffset = false;
-    int numberOfIntsInDb = sb.data_block_size / sizeof(int);
 
     seekDatablockById(fd, sb, parentInode.dataBlocks[0]);
 
     while(readSum < parentInode.fileSize && resInode.id == -1) {
-        addOffset = (readSum % sb.data_block_size + sizeof(DirTableRow) > sb.data_block_size 
-                        || (readSum % sb.data_block_size == 0 && readSum != 0));
-
-        if(dbIndex < 10 && addOffset) {
-            seekDatablockById(fd, sb, parentInode.dataBlocks[dbIndex++]);
-        } else if(addOffset && numberOfIntsInDb > dbIndex - 10) {
-            seekDatablockById(fd, sb, parentInode.doubleReferenceDataBlock); mySeek(fd, (dbIndex - 10) * sizeof(int), SEEK_CUR, 
-                    "Error seeking in doubleReferenceDataBlock findInodeInFile");
-
-            int dbId;
-            int curReadBytes = read(fd, &dbId, sizeof(int));
-            errCheck(fd, curReadBytes, 6, "Error reading doubleReferenceDataBlock in findInodeInFile");
-            seekDatablockById(fd, sb, dbId);
-            dbIndex++;
-        }
-
+        checkOffset(fd, sb, &dbIndex, readSum, parentInode);
+        
         int readBytes = read(fd, &dirTableRow, sizeof(DirTableRow));
         errCheck(fd, readBytes, 6, "Error searching for file");
         readSum += readBytes;
@@ -944,20 +880,14 @@ void addRowToDirTable(int fd, Superblock * sb, Inode * parentInode, const char *
 
     int pos = 0; 
     if(datablockToWrite < 10) { 
-        printf("DbToWrite %d\n", datablockToWrite);
-        printf("DbIndex %d\n", parentInode->dataBlocks[datablockToWrite]);
         seekDatablockById(fd, *sb, parentInode->dataBlocks[datablockToWrite]);
     } else {
-        printf("datablock 12: %s\n", newRow.fileName);
         seekDatablockById(fd, *sb, parentInode->doubleReferenceDataBlock);
-        printf("%d\n", sb->firstFreeDataBlock);
         pos = mySeek(fd, (datablockToWrite - 10) * sizeof(int), SEEK_CUR, 
                 "Error seeking to back to delegated datablock in addFileToDirTable");
-        printf("pos pos 3: %d\n", pos);
         int datablockId;
         int readBytes = read(fd, &datablockId, sizeof(int));
         errCheck(fd, readBytes, 6, "Error reading datablock id from doubleReferenceDataBlock");
-        printf("pos pos 3 data: %d\n", datablockId);
         seekDatablockById(fd, *sb, datablockId);
     }
     
@@ -981,7 +911,7 @@ void addRowToDirTable(int fd, Superblock * sb, Inode * parentInode, const char *
 //I use that for lsobj and mkdir
 char * cd(int fd, const char * path, Inode * inode, Superblock sb) {
     if(path[0] != '+' || path[1] != '/') {
-        errx(13, "Invalid path. Please enter the full path! Root directory is missing");
+        errx(2, "Invalid path. Please enter the full path! Root directory is missing");
     }
     
     path += 2;
@@ -994,7 +924,7 @@ char * cd(int fd, const char * path, Inode * inode, Superblock sb) {
         if(path[0] != '\0' && path[0] == '/') {
             *inode = findInodeInFile(fd, sb, *inode, word);
             if(inode->id == -1) {
-                errx(13, "Invalid path. Please enter the full path! A directory in the path does not exist");
+                errx(2, "Invalid path. Please enter the full path! A directory in the path does not exist");
             }
             free(word);
             path++;
@@ -1051,30 +981,14 @@ void lsobjAndStat(const char * fileName, const char * path, printFunction printF
     }
 }
 
-DirTableRow * getAllFilesInodeIds(int fd, Superblock sb, int * childCounter, Inode resInode) {
+DirTableRow * getAllFilesInodeIds(int fd, Superblock sb, int * childCounter, Inode parentInode) {
     int readBytes = 0;
-    DirTableRow * inodeIds = malloc(resInode.fileSize);
+    DirTableRow * inodeIds = malloc(parentInode.fileSize);
     int currDbId = 0;
-    int numberOfIntsInDb = sb.data_block_size / sizeof(int);
-    seekDatablockById(fd, sb, resInode.dataBlocks[currDbId++]);
+    seekDatablockById(fd, sb, parentInode.dataBlocks[currDbId++]);
 
-    while(readBytes < resInode.fileSize) {
-        bool addOffset = (readBytes % sb.data_block_size + sizeof(DirTableRow) > sb.data_block_size 
-                        || (readBytes % sb.data_block_size == 0 && readBytes != 0));
-
-        if(addOffset && currDbId < 10) {
-            seekDatablockById(fd, sb, resInode.dataBlocks[currDbId++]);
-        } else if(addOffset && numberOfIntsInDb > currDbId - 10) {
-            seekDatablockById(fd, sb, resInode.doubleReferenceDataBlock);
-            mySeek(fd, (currDbId - 10) * sizeof(int), SEEK_CUR, 
-                    "Error seeking in doubleReferenceDataBlock findInodeInFile");
-
-            int dbId;
-            int curReadBytes = read(fd, &dbId, sizeof(int));
-            errCheck(fd, curReadBytes, 6, "Error reading doubleReferenceDataBlock in findInodeInFile");
-            seekDatablockById(fd, sb, dbId);
-            currDbId++;
-        }
+    while(readBytes < parentInode.fileSize) {
+        checkOffset(fd, sb, &currDbId, readBytes, parentInode);
 
         int curReadBytes = read(fd, &inodeIds[(*childCounter)++], sizeof(DirTableRow));
         errCheck(fd, curReadBytes, 6, "Error reading file from directory");
@@ -1083,6 +997,23 @@ DirTableRow * getAllFilesInodeIds(int fd, Superblock sb, int * childCounter, Ino
     }
 
     return inodeIds;
+}
+
+void sortInodeIds(DirTableRow * inodeIds, int childCounter) {
+    int minIndex;
+
+    for (int i = 0; i < childCounter; ++i) {
+        minIndex = i;
+        for (int j = i + 1; j < childCounter; ++j) {
+            if(strcmp(inodeIds[minIndex].fileName, inodeIds[j].fileName) > 0) {
+                minIndex = j;
+            }
+        }
+
+        DirTableRow temp = inodeIds[i];
+        inodeIds[i] = inodeIds[minIndex];
+        inodeIds[minIndex] = temp;
+    }
 }
 
 void lsdir(const char * fileName, const char * path) {
@@ -1105,10 +1036,13 @@ void lsdir(const char * fileName, const char * path) {
     
     int childCounter = 0;
     DirTableRow * inodeIds = getAllFilesInodeIds(fd, sb, &childCounter, resInode);
+    sortInodeIds(inodeIds, childCounter);
 
     for (int i = 0; i < childCounter; ++i) {
         printInode(readInodeById(fd, sb, inodeIds[i].inodeId), inodeIds[i].fileName);
     }
+
+    free(inodeIds);
 }
 
 void firstFileTest(const char * fileName) {
@@ -1165,7 +1099,7 @@ void printStat(Inode i, const char * fileName) {
     printWhitespaces(2);
     printedBytes = printNumber("Size: ", i.fileSize);
     printWhitespaces(printOffset - printedBytes);
-    printedBytes = printNumber("Blocks: ", i.fileSize / block_size + (i.fileSize %  block_size != 0));
+    printedBytes = printNumber("Blocks: ", i.blockCount);
     printWhitespaces(printOffset - printedBytes - 7);
     if(i.fileType == 'd') {
         print(1, "directory");
@@ -1181,11 +1115,13 @@ void printStat(Inode i, const char * fileName) {
 }
 
 int * getAllDatablocksDelegatedToInode(int fd, Superblock sb, Inode inode) {
-    bool roundUp = (inode.fileSize % sb.data_block_size == 0);
-    long numberOfDataBlocks = (inode.fileSize / sb.data_block_size + roundUp);
-    int * dbIds = malloc( numberOfDataBlocks * sizeof(int)); 
-
+    int * dbIds = malloc( inode.blockCount * sizeof(int)); 
+    int numberOfDataBlocks = inode.blockCount;
     int dbIndex = 0;
+    //I do not want to count the double reference datablock
+    if(numberOfDataBlocks > 10) {
+        numberOfDataBlocks--;
+    }
     
     while(dbIndex < numberOfDataBlocks) {
         if(dbIndex < 10) {
@@ -1206,18 +1142,92 @@ int * getAllDatablocksDelegatedToInode(int fd, Superblock sb, Inode inode) {
 
     return dbIds;
 }
-//If time is left
-void removeDirectory(int fd, Superblock * sb, Inode * parentInode, Inode * childInode) {
-    
+
+void releaseDatablock(int fd, Superblock * sb, int childDb) {
+    seekDatablockById(fd, *sb, childDb);
+    int writtenBytes = write(fd, &sb->firstFreeDataBlock, sizeof(int));
+    errCheck(fd, writtenBytes, 7, "Error realeasing datablock");
+    sb->firstFreeDataBlock = childDb;
+    sb->numberOfFreeDataBlocks++;
 }
 
+void releaseInodeAndDatablocks(int fd, Superblock sb, Inode childInode) {
+    int * childDbs =  getAllDatablocksDelegatedToInode(fd, sb, childInode); 
 
-void myRmdir(const char * fileName, const char * path) {
+    if(childInode.blockCount > 10) {
+        releaseDatablock(fd, &sb, childInode.doubleReferenceDataBlock);    
+        childInode.blockCount--;
+    }
+
+    for (int i = 0; i < childInode.blockCount; ++i) {
+        releaseDatablock(fd, &sb, childDbs[i]);
+    }
+    
+    childInode.nextFreeInode = sb.firstFreeInode;
+    writeInode(fd, sb, childInode);
+    sb.firstFreeInode = childInode.id;
+    sb.numberOfFreeInodes++;
+    writeSuperblock(fd, sb);
+    free(childDbs);
+}
+
+void rmValidations(int fd, Inode childInode, const char * rmType) {
+    if(childInode.id == -1) {
+        close(fd);
+        errx(15, "File not found");
+    } else if(childInode.fileType == 'd' && childInode.fileSize != 0) {
+        close(fd);
+        errx(13, "Trying to delete non-empty directory");
+    } else if(strcmp(rmType, "rmDir") == 0 && childInode.fileType != 'd') {
+        close(fd);
+        errx(20, "Trying to delete a file with rmdir. Use rmfile instead!");
+    } else if(strcmp(rmType, "rmFile") == 0 && childInode.fileType != 'f') {
+        close(fd);
+        errx(20, "Trying to delete a directory with rmfile. Use rmdir instead!");
+    }
+}
+
+void removeFileOrDirectory(int fd, Superblock * sb, Inode * parentInode, const char * tableRowFileName, const char * rmType) {
+    uint64_t readSum = 0;
+    off_t childInodePosition;
+    DirTableRow dirTableRow;
+    int dbIndex = 1;
+    Inode childInode;
+    childInode.id = -1;
+
+    seekDatablockById(fd, *sb, parentInode->dataBlocks[0]);
+    while(readSum < parentInode->fileSize) {
+        checkOffset(fd, *sb, &dbIndex, readSum, *parentInode);
+
+        int readBytes = read(fd, &dirTableRow, sizeof(DirTableRow));
+        errCheck(fd, readBytes, 6, "Error searching for file");
+        readSum += readBytes;
+
+        if(strcmp(dirTableRow.fileName, tableRowFileName) == 0) {
+            childInodePosition = mySeek(fd, 0, SEEK_CUR, "Error finding childInode position");
+            childInode = readInodeById(fd, *sb, dirTableRow.inodeId); 
+            mySeek(fd, childInodePosition, SEEK_SET, "Error seeking childInode position");
+            childInodePosition -= sizeof(DirTableRow); //Because we have just read it we must remove the DirTableRow size
+        }
+    }
+    
+    rmValidations(fd, childInode, rmType);
+
+    mySeek(fd, childInodePosition, SEEK_SET, "Error seeking childInode position");
+    int writtenBytes = write(fd, &dirTableRow, sizeof(dirTableRow));
+    errCheck(fd, writtenBytes, 7, "Error overwriting the deleted file");
+
+    parentInode->fileSize -= sizeof(DirTableRow);
+    writeInode(fd, *sb, *parentInode);
+
+    releaseInodeAndDatablocks(fd, *sb, childInode);
+}
+
+void rm(const char * fileName, const char * path, const char * rmType) {
     int fd = myOpen(fileName, O_RDWR);
     Superblock sb;
     readSuperblock(fd, &sb);
     Inode currDirInode = readInodeById(fd, sb, 0);
-    Inode resInode;
     char * searchedFileName;
 
     if(strcmp(path, "+/") == 0) {
@@ -1226,17 +1236,10 @@ void myRmdir(const char * fileName, const char * path) {
     }
 
     searchedFileName = cd(fd, path, &currDirInode, sb);
-    resInode = findInodeInFile(fd, sb, currDirInode, searchedFileName);
-
-
-    if(resInode.id == -1) {
-        close(fd);
-        free(searchedFileName);
-        errx(15, "Directory not found");
-    }
-
-
+    
+    removeFileOrDirectory(fd, &sb, &currDirInode, searchedFileName, rmType);
     free(searchedFileName);
+    print(1, "Deletion successfull\n");
 }
 
 void addFileToDirTable(int fd, Superblock sb, Inode * parentInode, const char * newFileName, Inode newDirInode) {
@@ -1249,20 +1252,13 @@ void writeToFile(int fd, Superblock sb, const char * fileToCopy, Inode * newDirI
     int copyFd = myOpen(fileToCopy, O_RDONLY);
     char * data = malloc(sb.data_block_size);
     int readBytes;
-    int index = 0;
+    int dbIndex = 0;
     
     while((readBytes = read(copyFd, data, sb.data_block_size)) > 0) {
-        if(index < 10) {
-            seekDatablockById(fd, sb, newDirInode->dataBlocks[index++]);
+        if(dbIndex < 10) {
+            seekDatablockById(fd, sb, newDirInode->dataBlocks[dbIndex++]);
         } else {
-            seekDatablockById(fd, sb, newDirInode->doubleReferenceDataBlock);
-            mySeek(fd, (index - 10) * sizeof(int), SEEK_CUR, 
-                "Error seeking to delegated datablock in writeToFile");
-            int datablockId;
-            int errCheckReadBytes = read(fd, &datablockId, sizeof(int));
-            errCheck(fd, errCheckReadBytes, 6, "Error reading datablock id from doubleReferenceDataBlock");
-            seekDatablockById(fd, sb, datablockId);
-            index++;
+            seekDoubleReferenceInode(fd, sb, &dbIndex, newDirInode->doubleReferenceDataBlock);
         }
         
         int writtenBytes = write(fd, data, readBytes);
@@ -1271,6 +1267,7 @@ void writeToFile(int fd, Superblock sb, const char * fileToCopy, Inode * newDirI
     }
 }
 
+//converts permissions from whatever mode_t is to for example 755 etc
 char * convertPermissions(mode_t perm) {
     int result = 0;
     result += (perm & S_IRUSR) ? 400 : 0;
@@ -1303,6 +1300,7 @@ void copyFromFsToMyFS(int fd, Superblock sb, const char * fileToCopy, const char
     errCheck(fd, returnVal, 19, "Failed to stat source file in copyFromFsToMyFS");
     char * permissions = convertPermissions(srcFileInfo.st_mode);
     Inode newDirInode = inodeConstr('f', srcFileInfo.st_uid, srcFileInfo.st_gid, permissions);
+
     delegateDataBlocksToInode(fd, &sb, &newDirInode, requiredSpace, 0);
     writeToFile(fd, sb, fileToCopy, &newDirInode);
     addFileToDirTable(fd, sb, &parentInode, newFileName, newDirInode);
@@ -1321,21 +1319,15 @@ void writeToOustideFile(int fd, Superblock sb, int writeFd, Inode copyFileInode)
         if(currDbId < 10) {
             seekDatablockById(fd, sb, copyFileInode.dataBlocks[currDbId++]);
         } else if(numberOfIntsInDb > currDbId - 10) {
-            seekDatablockById(fd, sb, copyFileInode.doubleReferenceDataBlock);
-            mySeek(fd, (currDbId - 10) * sizeof(int), SEEK_CUR, 
-                    "Error seeking in doubleReferenceDataBlock findInodeInFile");
-
-            int dbId;
-            int curReadBytes = read(fd, &dbId, sizeof(int));
-            errCheck(fd, curReadBytes, 6, "Error reading doubleReferenceDataBlock in findInodeInFile");
-            seekDatablockById(fd, sb, dbId);
-            currDbId++;
+            seekDoubleReferenceInode(fd, sb, &currDbId, copyFileInode.doubleReferenceDataBlock);
         }
 
+        //Here curReadBytes should always be equal to sb.data_block_size
         int curReadBytes = read(fd, data, sb.data_block_size);
         errCheck(fd, curReadBytes, 6, "Error reading file from directory");
         readBytes += curReadBytes;
         int writtenBytes;
+
         if(readBytes < copyFileInode.fileSize) {
             writtenBytes = write(writeFd, data, curReadBytes);
             errCheck(fd, writtenBytes, 7, "Failed writing to outside file");
@@ -1351,7 +1343,7 @@ void copyFromMyFsToFs(int fd, Superblock sb, const char * fileToCopy, const char
     char * newFileName = cd(fd, fileToCopy, &parentInode, sb); 
     Inode copyFileInode = findInodeInFile(fd, sb, parentInode, newFileName);
 
-    int writeFd = open(fileToWrite, O_WRONLY | O_CREAT, 0644);
+    int writeFd = open(fileToWrite, O_WRONLY | O_TRUNC | O_CREAT, 0644);
     if(writeFd < 0) {
         err(2, "Error opening or creating destination file");    
     }
@@ -1453,6 +1445,16 @@ int main(int argc, char * argv[]) {
         }
         
         copyFile(fileName, argv[2], argv[3]);
+    } else if(strcmp(argv[1], "rmdir") == 0) {
+        if(argc < 3) {
+            errx(1, "Not enough arguments");
+        }
+        rm(fileName, argv[2], "rmDir");
+    } else if(strcmp(argv[1], "rmfile") == 0) {
+        if(argc < 3) {
+            errx(1, "Not enough arguments");
+        }
+        rm(fileName, argv[2], "rmFile");
     }
 
 	return 0;

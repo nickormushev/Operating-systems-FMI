@@ -1,8 +1,8 @@
 Error codes:
 1) Not enough argument 2) Invalid file path 3) pipe error 4) dup2 error 5) exec error 6) read error 7) write error 
 8) No more inodes 9) lseek error 10) Corrupted superblock 11) Corrupted inode 12) Failed datablock initialization
-13) Invalid path 14) Not enough data blocks 15) File not found 16) Trying to lsdir a file 17) File or directory name taken 
-18) File size limit 19) Deletion of root directory is formbidden 19) Failed stat 
+13) Trying to delete non-empty directory 14) Not enough data blocks 15) File not found 16) Trying to lsdir a file 17) File or directory name taken 
+18) File size limit 19) Deletion of root directory is formbidden 19) Failed stat 20) Trying to delete a file with rmdir. Or a dir with rmfile
 
 Day 1: Started by reareading the problem.txt a few time. Found out I did not understand all of it at
 first.  I was expecting to have to access the memory directly in some way so I could write my files
@@ -153,33 +153,62 @@ the structure of the file system and not all files. So I will not be looking at 
 Day 7: Fixed up the fsck command by making the above mentioned validations. I started looking at the
 next command in the list which is debug. The problem.txt files says that we need to print the
 appropriate metadata that describes the structures in the file system. For this I decided to print
-the information in the superblock because the information of every inode seems a bit too much.
-This task is a bit annoying but i tried to make the output look as best I could considering my knowledge.
-Might be cool to center the header but that requires knowledge of the longest line before I print it.
-I am unsure how to achieve this at the moment except to just calculate line lenghts before printing which
-seemed a bit overkill.
+the information in the superblock because the information of every inode seems a bit too much.  This
+task is a bit annoying but i tried to make the output look as best I could considering my knowledge.
+Might be cool to center the header but that requires knowledge of the longest line before I print
+it.  I am unsure how to achieve this at the moment except to just calculate line lenghts before
+printing which seemed a bit overkill.
 
-Day 8: Going down the list onto the next commands and I saw lsobj and lsdir which are cool and all but
-I don't have that many objects nor directories for me to test it on so I decided to implement at least mkdir
-first. Here I will use the that idea Angel gave me. My directories will simulate a table. They will be a 
-pair of a inode of the file in the first column and a name in the second. If the name is too long I will
-store it in a file and in it's place there will be the text inode: <num>.
+Day 8: Going down the list onto the next commands and I saw lsobj and lsdir which are cool and all
+but I don't have that many objects nor directories for me to test it on so I decided to implement at
+least mkdir first. Here I will use the that idea Angel gave me. My directories will simulate a
+table. They will be a pair of a inode of the file in the first column and a name in the second. If
+the name is too long I will store it in a file and in it's place there will be the text inode:
+<num>.
 
-As of now every directory is created with uid and gid for the root user and group ids(0,0). Need to think if I
-want to change that.
+As of now every directory is created with uid and gid for the root user and group ids(0,0). Need to
+think if I want to change that.
 
-Realise numberOfFreeInodes and datablocks are unneeded. Maybe keep them just for more information of the state
-of the fileSystem. Actually I can just count them? Need to decide if I should remove them altogether.
+Realise numberOfFreeInodes and datablocks are unneeded. Maybe keep them just for more information of
+the state of the fileSystem. Actually I can just count them? Need to decide if I should remove them
+altogether.
 
-Finally managed to create my first directory called test. I am slowly progressing but finally I feel like I have
-a the whole idea of how my filesystem should work. The only big problems left to solve are to make memory delegation
-work with files. Basically hava a datablock to store more datablock indices.
+Finally managed to create my first directory called test. I am slowly progressing but finally I feel
+like I have a the whole idea of how my filesystem should work. The only big problems left to solve
+are to make memory delegation work with files. Basically hava a datablock to store more datablock
+indices.
 
-Day 9: Managed to fix the printing of the lsobj command so that the output resembles the output of the actual ls -l
-command. Also created the base for the lsdir command which still needs some polishing. Have reapeated code and need to
-put it in a function. It was late so a quick copy seemed easier for testing purposes
+Day 9: Managed to fix the printing of the lsobj command so that the output resembles the output of
+the actual ls -l command. Also created the base for the lsdir command which still needs some
+polishing. Have reapeated code and need to put it in a function. It was late so a quick copy seemed
+easier for testing purposes
 
-The idea to delegate a file for the name may be a bit too much. I think delegating a datablock is sufficient. Even though
-the space is not infinite I think it should be sufficient. If a file was a better choice I am at fault
+The idea to delegate a file for the name may be a bit too much. I think delegating a datablock is
+sufficient. Even though the space is not infinite I think it should be sufficient. If a file was a
+better choice I am at fault
 
-Day 10: Finished the stat command in an hour. Just decided to copy the ouput of the actual stat command
+Day 10: Finished the stat command in an hour. Just decided to copy the ouput of the actual stat
+command. Put the finishing touches on the findInodeInDir function. Now the double data block is
+working. I have spent too much time on this project and exams are coming so I will try to the the
+copy commands next. 
+
+After having finished mkdir the copy commands had all the function they required already made for
+them. It took some debugging and realising that when copying from my filesystem to the normal one I
+do not have and EOF field an sometimes it is possible to read more data than is desired, but in the
+end it is completed aswell. I do not know if my code is optimal. I feel thata few functions have a
+lot of simmilair ideas but I am unsure if it is possible to merge them. As of now it does not seem
+like it but I might be mistaken. Due to lack of time I will leave them as is. I left the rmdir
+command for last due to how I have implemented the mkdir command. I started it and I am facing a few
+issues because I determine the datablock to write to based on fileSize. This means that if I remove
+a directory or file(for rmfile) I will end up writing on top of another one that is valid. The
+easiest way to solve this I think is to just get the last directory from the directory Table and
+move it to the place of the one I have removed. I still have not implemented the endless name
+functionality though I do not believe I will have the time sadly.
+
+Nigth 10: After a whole day of coding at 2'o clock during the nigh I finally managed to implement
+almost all of the functionality. Every command is working as of now. I just need to fix the problem
+with unlimited name sizes and the triple pointers. Both of theese I do not believe I have the time
+to do sadly, but still I had a lot of fun with this project. My understanding of file systems has
+grown a ton. I will look at the bonuses but that will be tommorow. As of now I will call it a night.
+Finally almost everything works. Spent a ridiculous amount of time researching and writing this, but
+I am definitely satisfied with the result. Also I have to write the documentation as well.
