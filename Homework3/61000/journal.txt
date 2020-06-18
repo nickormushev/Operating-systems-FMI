@@ -1,8 +1,8 @@
 Error codes:
-1)Not enough argument 2)Open file error 3)pipe error 4)dup2 error 5)exec error 6) read error 7) write error 
-8)No more inodes 9) lseek error 10) Corrupted superblock 11) Corrupted inode 12) Failed datablock initialization
+1) Not enough argument 2) Invalid file path 3) pipe error 4) dup2 error 5) exec error 6) read error 7) write error 
+8) No more inodes 9) lseek error 10) Corrupted superblock 11) Corrupted inode 12) Failed datablock initialization
 13) Invalid path 14) Not enough data blocks 15) File not found 16) Trying to lsdir a file 17) File or directory name taken 
-18) File size limit
+18) File size limit 19) Deletion of root directory is formbidden 19) Failed stat 
 
 Day 1: Started by reareading the problem.txt a few time. Found out I did not understand all of it at
 first.  I was expecting to have to access the memory directly in some way so I could write my files
@@ -181,3 +181,5 @@ put it in a function. It was late so a quick copy seemed easier for testing purp
 
 The idea to delegate a file for the name may be a bit too much. I think delegating a datablock is sufficient. Even though
 the space is not infinite I think it should be sufficient. If a file was a better choice I am at fault
+
+Day 10: Finished the stat command in an hour. Just decided to copy the ouput of the actual stat command
