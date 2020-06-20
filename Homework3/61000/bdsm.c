@@ -13,12 +13,12 @@
 #include <errno.h>
 #include <pwd.h>
 #include <grp.h>
-#define block_size 512
+#define block_size 512 
 
 typedef struct {
     int nextFreeInode;
     int id;
-    uint64_t fileSize;
+    size_t fileSize;
     char fileType;
     uint16_t uid;
     uint16_t gid;
@@ -304,27 +304,6 @@ uint16_t Fletcher16Checksum(uint8_t * data, int size) {
     return (sum2 << 8) | sum1;
 }
 
-void printInodeForTesting(Inode i) {
-    printf("INODE\n");
-    printf("%d\n", i.checksum);
-    for (int j = 0; j < 10; ++j) {
-        printf("%d\n", i.dataBlocks[j]);
-    }
-    printf("%d\n", i.doubleReferenceDataBlock);
-    printf("%ld\n", i.fileSize);
-    printf("%c\n", i.fileType);
-    printf("%d\n", i.gid);
-    printf("%d\n", i.id);
-    printf("%ld\n", i.modificationTime);
-    printf("%d\n", i.nextFreeInode);
-    printf("%s\n", i.permissions);
-    printf("%d\n", i.reserved);
-    printf("%d\n", i.trippleReferenceDataBlock);
-    printf("%d\n", i.uid);
-
-    printf("---------------------\n");
-}
-
 void printPermissions(const char perms[4], const char fileType) {
     int currNum;
     char letters[4];
@@ -382,7 +361,7 @@ void printInode(Inode i, const char * fileName) {
     printPermissions(i.permissions, i.fileType);
     print(1, " ");
     printUserAndGroupNames(i.uid, i.gid);   
-    print(1, intToString(i.fileSize));
+    printNumber("", i.fileSize);
     print(1, " ");
     printModificationTime(i.modificationTime, "%Y-%m-%dT%H-%M-%S");
 
@@ -581,21 +560,6 @@ void validateDataBlocks(int fd, Superblock sb) {
     write(1, "Successful data block initialization!\n", 38);
 }
 
-void printSuperblock(Superblock * sb) {
-    printf("%ld\n", sb->dataBlockSpace);
-    printf("%ld\n", sb->data_block_size);
-    printf("%ld\n", sb->inodeSize);
-    printf("%d\n", sb->inodesPerDatablock);
-    printf("%d\n", sb->checksum);
-    printf("%ld\n", sb->inodeSpace);
-    printf("%d\n", sb->numberOfFreeInodes);
-    printf("%d\n", sb->numberOfFreeDataBlocks);
-    printf("freeData: %d\n", sb->firstFreeDataBlock);
-    printf("freeInode: %d\n", sb->firstFreeInode);
-    printf("fsSize: %ld\n", sb->filesystemSize);
-    printf("sbSize: %ld\n", sb->size);
-}
-
 bool validateSuperblockInodeCount(int fd, Superblock sb) {
     uint32_t inodeCounter = 0;
     uint32_t currInodeId = sb.firstFreeInode;   
@@ -741,7 +705,6 @@ char * readWordFromPath(const char * path) {
 
 uint32_t getNextFreeDatablock(int fd, Superblock sb) {
     int nextFreeDataBlockIndex;
-    printf("Error her %d", sb.firstFreeDataBlock);
     seekDatablockById(fd, sb, sb.firstFreeDataBlock);
     int readBytes = read(fd, &nextFreeDataBlockIndex, sizeof(int));
     errCheck(fd, readBytes, 6, "Error reading nextFreeDataBlockIndex");
@@ -819,8 +782,6 @@ void delegateDataBlocksToInode(int fd, Superblock * sb, Inode * inode, uint64_t 
         delegateToDoubleReferenceDataBlock(fd, sb, inode, &requiredDataBlocks, index - 10);
     }
 
-    printf("Dbs Delegated: %d\n", sb->firstFreeDataBlock);
-
     if(requiredDataBlocks > 0) {
         errx(18, "You are at the file size limit");
     }
@@ -878,12 +839,11 @@ void addRowToDirTable(int fd, Superblock * sb, Inode * parentInode, const char *
         dbOffset = 0;
     }
 
-    int pos = 0; 
     if(datablockToWrite < 10) { 
         seekDatablockById(fd, *sb, parentInode->dataBlocks[datablockToWrite]);
     } else {
         seekDatablockById(fd, *sb, parentInode->doubleReferenceDataBlock);
-        pos = mySeek(fd, (datablockToWrite - 10) * sizeof(int), SEEK_CUR, 
+        mySeek(fd, (datablockToWrite - 10) * sizeof(int), SEEK_CUR, 
                 "Error seeking to back to delegated datablock in addFileToDirTable");
         int datablockId;
         int readBytes = read(fd, &datablockId, sizeof(int));
@@ -891,16 +851,13 @@ void addRowToDirTable(int fd, Superblock * sb, Inode * parentInode, const char *
         seekDatablockById(fd, *sb, datablockId);
     }
     
-    pos = mySeek(fd, dbOffset, SEEK_CUR,
+    mySeek(fd, dbOffset, SEEK_CUR,
             "Failed to seek when adding directory to parent file");
 
-    printf("Position of write: %d\n", pos);
     int writtenBytes = write(fd, &newRow, sizeof(DirTableRow));
     errCheck(fd, writtenBytes, 7, "Error writing new file to directory table");
     parentInode->fileSize += writtenBytes;
-    
-    printf("Inode file size: %ld\n", parentInode->fileSize);
-    printf("Inode file size 2: %d\n", parentInode->dataBlocks[0]);
+
     writeInode(fd, *sb, *parentInode);
     writeSuperblock(fd, *sb);
 }
@@ -951,6 +908,7 @@ void myMkdir(const char * fileName, const char * path) {
     addDirToDirTable(fd, sb, &inode, word); 
 
     free(word);
+    print(1, "Directory created successfully\n");
 }
 
 typedef void (*printFunction) (Inode, const char *);
@@ -1043,26 +1001,6 @@ void lsdir(const char * fileName, const char * path) {
     }
 
     free(inodeIds);
-}
-
-void firstFileTest(const char * fileName) {
-    int fd = myOpen(fileName, O_RDWR);
-    Superblock sb;
-    readSuperblock(fd, &sb);
-    Inode inode = readInodeById(fd, sb, 0);
-    DirTableRow dirTableRow;
-    printf("Reserved db: %d\n", inode.dataBlocks[0]);
-
-    if(inode.dataBlocks[0] != -1) {
-        seekDatablockById(fd, sb, inode.dataBlocks[0]);
-        int pos = lseek(fd, 0, SEEK_CUR);
-
-        printf("pos: %d\nShould be: %ld\n", pos, 512 + sb.inodeSpace);
-
-        int readBytes = read(fd, &dirTableRow, sizeof(DirTableRow));
-        errCheck(fd, readBytes, 6, "Error searching for file");
-        printf("%s\n", dirTableRow.fileName);
-    }
 }
 
 void printStatPermissions(Inode i) {
@@ -1180,10 +1118,10 @@ void rmValidations(int fd, Inode childInode, const char * rmType) {
         errx(13, "Trying to delete non-empty directory");
     } else if(strcmp(rmType, "rmDir") == 0 && childInode.fileType != 'd') {
         close(fd);
-        errx(20, "Trying to delete a file with rmdir. Use rmfile instead!");
+        errx(21, "Trying to delete a file with rmdir. Use rmfile instead!");
     } else if(strcmp(rmType, "rmFile") == 0 && childInode.fileType != 'f') {
         close(fd);
-        errx(20, "Trying to delete a directory with rmfile. Use rmdir instead!");
+        errx(21, "Trying to delete a directory with rmfile. Use rmdir instead!");
     }
 }
 
@@ -1223,8 +1161,7 @@ void removeFileOrDirectory(int fd, Superblock * sb, Inode * parentInode, const c
     releaseInodeAndDatablocks(fd, *sb, childInode);
 }
 
-void rm(const char * fileName, const char * path, const char * rmType) {
-    int fd = myOpen(fileName, O_RDWR);
+void rm(int fd, const char * path, const char * rmType) {
     Superblock sb;
     readSuperblock(fd, &sb);
     Inode currDirInode = readInodeById(fd, sb, 0);
@@ -1265,6 +1202,8 @@ void writeToFile(int fd, Superblock sb, const char * fileToCopy, Inode * newDirI
         errCheck(fd, writtenBytes, 7, "Error writing data to datablock in writeToFile");
         newDirInode->fileSize += writtenBytes;
     }
+
+    free(data);
 }
 
 //converts permissions from whatever mode_t is to for example 755 etc
@@ -1289,15 +1228,17 @@ void copyFromFsToMyFS(int fd, Superblock sb, const char * fileToCopy, const char
     Inode nameTakenInode = findInodeInFile(fd, sb, parentInode, newFileName);
 
     if(nameTakenInode.id != -1) {
-        close(fd);
-        errx(17, "Name %s is already taken", newFileName);
+        rm(fd, fileToWrite, "rmFile");
+        parentInode = readInodeById(fd, sb, 0);
+        free(newFileName);
+        newFileName = cd(fd, fileToWrite, &parentInode, sb); 
     }
 
     size_t requiredSpace = getFileSize(fileToCopy);
 
     struct stat srcFileInfo;
     int returnVal = stat(fileToCopy, &srcFileInfo);
-    errCheck(fd, returnVal, 19, "Failed to stat source file in copyFromFsToMyFS");
+    errCheck(fd, returnVal, 20, "Failed to stat source file in copyFromFsToMyFS");
     char * permissions = convertPermissions(srcFileInfo.st_mode);
     Inode newDirInode = inodeConstr('f', srcFileInfo.st_uid, srcFileInfo.st_gid, permissions);
 
@@ -1336,6 +1277,8 @@ void writeToOustideFile(int fd, Superblock sb, int writeFd, Inode copyFileInode)
             errCheck(fd, writtenBytes, 7, "Failed writing to outside file");
         }
     }
+
+    free(data);
 }
 
 void copyFromMyFsToFs(int fd, Superblock sb, const char * fileToCopy, const char * fileToWrite) {
@@ -1349,6 +1292,7 @@ void copyFromMyFsToFs(int fd, Superblock sb, const char * fileToCopy, const char
     }
 
     writeToOustideFile(fd, sb, writeFd, copyFileInode);
+    free(newFileName);
 }
 
 void copyFile(const char * fileName, const char * fileToCopy, const char * fileToWrite) {
@@ -1363,6 +1307,39 @@ void copyFile(const char * fileName, const char * fileToCopy, const char * fileT
     } else {
         errx(2, "One of your file paths is invalid");
     }
+    
+    print(1, "File copied successfully\n");
+}
+
+void cat(const char * fileName, const char * path) {
+    int fd = myOpen(fileName, O_RDWR);
+    Superblock sb;
+    readSuperblock(fd, &sb);
+
+    Inode parentInode = readInodeById(fd, sb, 0);
+    char * newFileName = cd(fd, path, &parentInode, sb); 
+    Inode printFileInode = findInodeInFile(fd, sb, parentInode, newFileName);
+
+    if(printFileInode.fileType == 'd') {
+        close(fd);
+        errx(23, "You are trying to print a directory");
+    }
+
+    writeToOustideFile(fd, sb, 1, printFileInode);
+}
+
+void printHelp() {
+    print(1, "mkfs - creates filesystem\n");
+    print(1, "fsck - checks to see if filesystem structure is corrupted\n");
+    print(1, "debug - prints filesystem metadata\n");
+    print(1, "cpfile <source file path> <destination file path> - can be used to copy files between my filesystem and another\n");
+    print(1, "stat <file path> - prints metadata for file\n");
+    print(1, "lsobj <file path> - prints file information like ls -l in linux\n");
+    print(1, "lsdir <directory path> - prints all files and directories in a directory like lsobj\n");
+    print(1, "cat <file path> - prints file data to stdout\n");
+    print(1, "mkdir <file path> - creates a directory\n");
+    print(1, "rmdir <file path> - removes a directory\n");
+    print(1, "rmfile <file path> - removes a file\n");
 }
 
 void mkfs(const char * fileName) {
@@ -1425,7 +1402,7 @@ int main(int argc, char * argv[]) {
         if(argc < 3) {
             errx(1, "Not enough arguments");
         }
-        //firstFileTest(fileName);
+
         lsobjAndStat(fileName, argv[2], printInode);
     } else if(strcmp(argv[1], "lsdir") == 0) {
         if(argc < 3) {
@@ -1449,12 +1426,24 @@ int main(int argc, char * argv[]) {
         if(argc < 3) {
             errx(1, "Not enough arguments");
         }
-        rm(fileName, argv[2], "rmDir");
+
+        int fd = myOpen(fileName, O_RDWR);
+        rm(fd, argv[2], "rmDir");
     } else if(strcmp(argv[1], "rmfile") == 0) {
         if(argc < 3) {
             errx(1, "Not enough arguments");
         }
-        rm(fileName, argv[2], "rmFile");
+        int fd = myOpen(fileName, O_RDWR);
+        rm(fd, argv[2], "rmFile");
+    } else if(strcmp(argv[1], "cat") == 0) {
+        if(argc < 3) {
+            errx(1, "Not enough arguments");
+        }
+        cat(fileName, argv[2]);
+    } else if(strcmp(argv[1], "help") == 0) {
+        printHelp();
+    } else {
+        errx(22, "Invalid command. You can use help to see the commands");
     }
 
 	return 0;

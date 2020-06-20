@@ -212,3 +212,6 @@ to do sadly, but still I had a lot of fun with this project. My understanding of
 grown a ton. I will look at the bonuses but that will be tommorow. As of now I will call it a night.
 Finally almost everything works. Spent a ridiculous amount of time researching and writing this, but
 I am definitely satisfied with the result. Also I have to write the documentation as well.
+
+Day 11: I realised that implementing the cat command should be easy. Just put the writeFile descriptor be 1
+an reuse the function for copy. So I implemented it.
